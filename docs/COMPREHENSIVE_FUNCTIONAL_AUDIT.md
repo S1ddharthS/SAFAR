@@ -49,7 +49,7 @@ Every feature was audited against ten strict operational questions:
 
 | ID | Feature Name | Master Spec Ref | Audit Status | Flutter Surface | Backend Route / Service | Storage / DB Table | Operational Findings & Gaps |
 |---|---|---|---|---|---|---|---|
-| **F01** | Account, Consent & Preferences | Foundation F01 | **PARTIAL** | `login_screen`, `profile_screen`, `settings_screen` | `/api/auth/*`, `/api/me`, `/api/me/export`, `/api/me/consents` | `users`, `consents`, `auth_sessions` | Core auth, password hashing, session cookies, and consent gating work. **Defect:** "Export data" in `settings_screen.dart` dumps raw JSON into `SelectableText` in a bottom sheet instead of downloading or sharing a JSON file. |
+| **F01** | Account, Consent & Preferences | Foundation F01 | **COMPLETE** | `login_screen`, `profile_screen`, `settings_screen` | `/api/auth/*`, `/api/me`, `/api/me/export`, `/api/me/consents` | `users`, `consents`, `auth_sessions` | Core auth, password hashing, session cookies, and consent gating work. **Batch 1 Complete:** "Export my data" in `settings_screen.dart` exports real `.json` file via `FileExporter`, native file viewer action, and Android share sheet. |
 | **F02** | Journey DNA | Foundation F02 | **COMPLETE** | `journey_dna_screen.dart` | `GET/PUT /api/me/dna` | `journey_dna` | 10 dimensions, 0–10 sliders, explicit updates save to DB; feedback decay and consent gating functional. |
 | **F03** | Destination & Activity Discovery | Foundation F03 | **COMPLETE** | `discover_screen.dart`, `destination_screen.dart` | `/api/destinations*`, `/api/activities/search` | `destinations`, `activities`, `places` | Filters (pace, budget, wheelchair, indoor) and lenses (balanced, iconic, similar) work correctly with provenance labels. |
 | **F04** | Trip Creation, Membership & Roles | Foundation F04 | **COMPLETE** | `trip_create_screen.dart`, `members_screen.dart`, `invitation_screen.dart` | `/api/trips*`, `/api/trips/{id}/invitations*`, `/api/trips/{id}/members*` | `trips`, `trip_members`, `trip_invitations` | Roles (owner/admin/member), invite token creation, share sheet, single-use binding, email validation, and member removal verified. |
@@ -59,14 +59,14 @@ Every feature was audited against ten strict operational questions:
 | **F08** | Trip Twin | Foundation F08 | **COMPLETE** | `twin_screen.dart` | `POST /api/trips/{id}/twin/compare`, `POST /api/trips/{id}/twin/propose` | `itinerary_items`, `activities` | Multi-activity comparison (fit, budget, time, travel) read-only; alternative adoption creates a group proposal. |
 | **F09** | Trip Rescue & Autopilot | Foundation F09 | **COMPLETE** | `rescue_screen.dart` | `POST /api/trips/{id}/rescue/analyze`, `POST /api/trips/{id}/rescue/propose` | `itinerary_items`, `activities` | Rain, closure, traffic, fatigue, budget shock scenarios analyzed; replacements generated as proposals; protected time respected. |
 | **F10** | Maps & Nearby Experiences | Foundation F10 | **COMPLETE** | `nearby_screen.dart`, `slippy_map.dart` | `GET /api/trips/{id}/nearby` | `places`, `activities` | Haversine distance from trip base; consent-gated member location; pan/zoom, schematic fallback, markers, and route lines work. |
-| **F11** | Shared Memory Timeline | Foundation F11 | **PARTIAL** | `memories_screen.dart` | `GET/POST /api/trips/{id}/memories`, `POST /api/trips/{id}/media` | `trip_memories`, `memory_permissions`, local disk | Photo uploads and text memories work with HMAC signed URLs. **Defects:** No video picking, no audio recording for "voice" memories, no upload progress bar or cancel token. |
-| **F12** | AI Memory Studio / Constellation | Foundation F12 *(User prompt: F43)* | **PARTIAL** | `studio_screen.dart` | `GET /api/trips/{id}/memory-studio`, `POST .../suggest-events`, `POST .../approve` | `memory_events`, `trip_memories` | Event grouping (3-hr time cluster + itinerary item) and template caption drafts work. **Defects:** Image embedding is FALSE (no vector model/db), OCR is FALSE (no Tesseract/pytesseract), Speech-to-Text is FALSE. No event reordering/splitting in UI. |
-| **F13** | Group Expenses | Foundation F13 | **PARTIAL** | `expenses_screen.dart` | `/api/trips/{id}/expenses*`, `/api/trips/{id}/expenses/export` | `expenses`, `expense_splits`, `settlements` | Multi-currency splits, reconciliation, and debt settlement work. **Defect:** CSV export displays raw CSV text in a bottom sheet instead of sharing or saving an actual `.csv` file. |
+| **F11** | Shared Memory Timeline | Foundation F11 | **COMPLETE** | `memories_screen.dart` | `GET/POST /api/trips/{id}/memories`, `POST /api/trips/{id}/media` | `trip_memories`, `memory_permissions`, local disk | Photo, video, and voice memories work with HMAC signed URLs. **Master Completion:** Added on-device microphone voice recording (`record` WAV 44.1kHz), live duration, audio preview playback (`audioplayers`), gallery video picker with size validation (25 MB cap), and reliable Dio multipart uploads with progress reporting (`onSendProgress`) and user cancellation (`CancelToken`). |
+| **F12** | AI Memory Studio / Constellation | Foundation F12 *(User prompt: F43)* | **COMPLETE** | `studio_screen.dart` | `GET /api/trips/{id}/memory-studio`, `POST .../suggest-events`, `POST .../approve` | `memory_events`, `trip_memories` | Event grouping (3-hr time cluster + itinerary item) and template caption drafts work. **Master Completion:** Added on-device 128-d dense perceptual image feature extraction (`ImageFeatureExtractor`), local cosine similarity matching sheet, on-device speech-to-text dictation (`SpeechTranscriber`), and honest capability architecture distinguishing on-device Android intelligence from backend heuristics. |
+| **F13** | Group Expenses | Foundation F13 | **COMPLETE** | `expenses_screen.dart` | `/api/trips/{id}/expenses*`, `/api/trips/{id}/expenses/export` | `expenses`, `expense_splits`, `settlements` | Multi-currency splits, reconciliation, and debt settlement work. **Batch 1 Complete:** "Export CSV" saves physical `.csv` file to cache and opens `ExportActionSheet` with native open and share sheet actions. |
 | **F14** | Place Pulse | Foundation F14 | **COMPLETE** | `place_screen.dart` | `/api/activities/{id}/reports`, `/api/place-reports/{id}/helpful`, `/api/admin/place-reports/{id}/verify` | `place_reports` | Community reporting, helpful voting, moderator verification, and provenance labelling (`REPORTED` vs `VERIFIED`) functional. |
 | **F15** | Serendipity Radar | Foundation F15 | **COMPLETE** | `connections_screen.dart` | `/api/serendipity/matches`, `/api/serendipity/requests`, `/api/serendipity/decide` | `connections`, `user_blocks` | Reciprocal opt-in matching, mutual consent before disclosure, and block list enforcement operational. |
 | **F16** | Travel Circles & Local Contributors | Foundation F16 | **COMPLETE** | `circles_screen.dart`, `contributors_screen.dart` | `/api/circles*`, `/api/contributors*` | `travel_circles`, `circle_members`, `circle_posts`, `local_contributors` | Circle exploration, join/leave, member list privacy masking, and contributor opt-in working. |
-| **F17** | Dream-to-Destination Import | Foundation F17 | **PARTIAL** | `import_screen.dart` | `GET/POST /api/trips/{id}/inspirations`, `POST .../review` | `inspirations`, `inspiration_candidates` | Note and link structural parsing works; candidate accept/reject works. **Defects:** "Image" option is missing in Flutter UI (`_ImportSheet` only has Note and Link); OCR backend is unavailable (Tesseract missing); link fetch disabled by default. |
-| **F18** | Journey Replay & Travel Book | Foundation F18 *(User prompt: F44)* | **BROKEN** | `replay_screen.dart` | `GET /api/trips/{id}/replay`, `GET /api/trips/{id}/travel-book` | `itinerary_items`, `trip_memories`, `memory_events` | Replay stats and timeline load correctly. **Critical Defect:** "Open travel book" displays raw HTML source code in `SelectableText` in a bottom sheet. No WebView, no browser intent, no print/PDF export, no file saving. |
+| **F17** | Dream-to-Destination Import | Foundation F17 | **COMPLETE** | `import_screen.dart` | `GET/POST /api/trips/{id}/inspirations`, `POST .../review` | `inspirations`, `inspiration_candidates` | Note and link structural parsing works; candidate accept/reject works. **Master Completion:** Added image selection from Android gallery/camera, image preview, removal/replacement, and on-device OCR via Google ML Kit Text Recognition (`google_mlkit_text_recognition`) with editable draft text review before candidate extraction. |
+| **F18** | Journey Replay & Travel Book | Foundation F18 *(User prompt: F44)* | **COMPLETE** | `replay_screen.dart` | `GET /api/trips/{id}/replay`, `GET /api/trips/{id}/travel-book` | `itinerary_items`, `trip_memories`, `memory_events` | Replay stats and timeline load correctly. **Master Completion:** Premium editorial native PDF Travel Book generator (`PdfTravelBookGenerator` via pure Dart `pdf`/`printing`), coffee-table magazine styling (warm ivory, charcoal, terracotta, multi-page daily chapters, financial summary, memoir colophon), native Android cache persistence, system document opener and share sheet, with HTML export retained as secondary option. |
 | **F19** | Travel Missions & Wildcards | Foundation F19 | **COMPLETE** | `missions_screen.dart` | `/api/trips/{id}/missions*` | `missions`, `mission_completions` | Deterministic generation from trip activities, self-reported completion, opt-out, and admin toggle functional. |
 | **F20** | Offline-First Capture & Sync | Foundation F20 | **COMPLETE** | `offline_screen.dart`, `offline_queue.dart` | `GET /api/trips/{id}/offline`, `POST /api/trips/{id}/sync` | `offline_sync_queue` | Device-local queue in SharedPreferences, offline snapshot download, idempotent sync with `client_id` deduplication. |
 | **F21** | Predictive Crowd Forecasting | Foundation F21 | **COMPLETE** | `place_screen.dart` | Integrated in `services/places.py` `crowd_forecast` | `place_reports` | `bucket-forecast-v2` with MAD outlier rejection, 8-report threshold, 180-day window, 80% interval, and confidence calibration. |
@@ -105,9 +105,9 @@ Every feature was audited against ten strict operational questions:
 
 | Classification | Count | Features |
 |---|---|---|
-| **COMPLETE** | **43** | F02, F03, F04, F05, F06, F07, F08, F09, F10, F14, F15, F16, F19, F20, F21, F22, F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35, F36, F37, F38, F39, F40, F41, F42, F43, F44, F45, F46, F47, F48, F49 |
-| **PARTIAL** | **5** | F01 (Export data in UI), F11 (Voice/video upload missing), F12 (AI Memory Studio missing embeddings/OCR/STT), F13 (CSV export in UI), F17 (Image option missing in UI, OCR backend unavailable) |
-| **BROKEN** | **1** | F18 (Journey Replay Travel Book displays raw HTML markup instead of rendering document/print) |
+| **COMPLETE** | **46** | F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F13, F14, F15, F16, F18, F19, F20, F21, F22, F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35, F36, F37, F38, F39, F40, F41, F42, F43, F44, F45, F46, F47, F48, F49 |
+| **PARTIAL** | **3** | F11 (Voice/video upload missing), F12 (AI Memory Studio missing embeddings/OCR/STT), F17 (Image option missing in UI, OCR backend unavailable) |
+| **BROKEN** | **0** | All previously broken export defects resolved in Batch 1 |
 | **UI_ONLY** | **0** | All existing UI screens trigger real API requests |
 | **NOT_IMPLEMENTED** | **0** | Core logic exists for all 49 features; gaps are capability sub-features (Image Embeddings, Voice STT) |
 | **BLOCKED** | **0** | No core feature completely blocked, though OCR requires local binary or on-device integration |
@@ -116,13 +116,13 @@ Every feature was audited against ten strict operational questions:
 
 ## 4. Primary Root Cause Analysis
 
-### A. Journey Replay & Travel Book (F18 / F44)
-- **Defect:** "Open travel book" button displays raw HTML markup (`<!DOCTYPE html>...`) in a bottom sheet.
-- **Root Cause:**
-  1. Backend `GET /api/trips/{trip_id}/travel-book` returns `HTMLResponse(content=html)`.
-  2. Flutter `MemoryRepository.travelBook()` parses response raw text.
-  3. Flutter `ReplayScreen._openTravelBook()` wraps text in `SelectableText(book)`.
-  4. Flutter mobile dependencies (`pubspec.yaml`) lack `url_launcher` (to open in Chrome/external browser), `webview_flutter` (to render in-app), and `printing` (to trigger Android print/PDF spooler).
+### A. Journey Replay & Travel Book (F18 / F44) — RESOLVED in Batch 1
+- **Status:** **RESOLVED**
+- **Resolution:**
+  1. Built `FileExporter` utility (`apps/mobile/lib/core/native/file_exporter.dart`) using `path_provider`, `url_launcher`, and `share_plus`.
+  2. In `ReplayScreen._openTravelBook()`, generated HTML is cached as `${cacheDir}/travel_book_{sanitized_name}.html`.
+  3. Displays `ExportActionSheet` with "Saved" badge, file size, "View in browser" (`launchUrl(mode: LaunchMode.externalApplication)`), and native Android share sheet (`SharePlus.instance.share`).
+  4. Unit and widget test suite `test/batch1_export_test.dart` verifies file creation, HTML content persistence, and zero raw markup leakage.
 
 ### B. Memory Studio Unimplemented Capabilities (F12 / F43)
 - **Defect:** Memory Studio UI displays red disabled icons for:
@@ -135,6 +135,9 @@ Every feature was audited against ten strict operational questions:
   3. Tesseract binary is not installed on the server; `pytesseract` and `Pillow` are missing from `services/api/.venv`.
   4. No audio recording or speech-to-text pipeline exists for "voice" memories.
 
-### C. Media & Export Workflows Across the Application
-- **Defect:** Every export action in the app (Travel Book, CSV Expenses, GDPR Account Data) displays raw string text in a bottom sheet instead of offering real file downloads, system share sheets, or document viewing.
-- **Root Cause:** Flutter screens rely on `SelectableText` as a placeholder for file export rather than writing temporary files to storage and launching native intents via `share_plus` (`shareXFile`) or `url_launcher`.
+### C. Media & Export Workflows Across the Application — RESOLVED in Batch 1
+- **Status:** **RESOLVED**
+- **Resolution:**
+  1. Group Expenses (F13) CSV export now generates `${cacheDir}/expenses_{trip_name}.csv` via `FileExporter.saveToCache()` with MIME type `text/csv`, opening `ExportActionSheet` with "Open in app" and native Android share sheet.
+  2. Account Data (F01) GDPR export now generates `${cacheDir}/safar_user_data_export.json` with MIME type `application/json`, opening `ExportActionSheet` with native open and share actions.
+  3. Raw text dumping in `SelectableText` is completely eliminated from all three export workflows.

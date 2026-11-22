@@ -26,10 +26,11 @@ android/.gradle/
 *.sqlite3
 
 # Media & Storage Volumes (Development, Staging & Production)
-storage/
-storage_staging/
+/storage/
+/storage_staging/
 services/api/storage/
 services/api/storage_staging/
+!apps/mobile/lib/core/storage/
 vibe_images/
 
 # Environment Files & Secrets

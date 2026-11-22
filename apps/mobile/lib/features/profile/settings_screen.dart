@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/common.dart';
+import '../../core/native/file_exporter.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../core/theme/safar_theme.dart';
@@ -87,20 +88,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final data = await ref.read(userRepositoryProvider).exportData();
       if (!mounted) return;
+      if (data.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No account data available to export.'),
+          ),
+        );
+        return;
+      }
+      const filename = 'safar_user_data_export.json';
+      final exporter = ref.read(fileExporterProvider);
+      final result = await exporter.saveToCache(
+        filename: filename,
+        content: data,
+        mimeType: 'application/json',
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+
       await showSafarSheet<void>(
         context,
-        builder: (_) => SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SafarSheetHeader(
-                title: 'Your data export',
-                subtitle:
-                    'Private member information is excluded. Copy this if you need a record.',
-              ),
-              SelectableText(data, style: context.texts.bodySmall),
-            ],
-          ),
+        builder: (_) => ExportActionSheet(
+          result: result,
+          title: 'Personal data archive ready',
+          subtitle:
+              'A full export of your profile, preferences, consents, and trip records.',
+          formatLabel: 'JSON Archive',
+          formatIcon: Icons.data_object_outlined,
+          openActionLabel: 'Open archive',
+          shareActionLabel: 'Share archive',
+          infoBannerText:
+              'Private member information and external data are excluded. Stored securely on your device.',
+          fileExporter: exporter,
         ),
       );
     } on ApiException catch (error) {
@@ -108,6 +127,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not export data: $error')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

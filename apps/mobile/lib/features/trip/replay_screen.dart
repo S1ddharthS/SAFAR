@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/memories.dart';
+import '../../core/native/file_exporter.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../core/theme/safar_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/safar_widgets.dart';
+import 'pdf_travel_book_generator.dart';
 
 class ReplayScreen extends ConsumerStatefulWidget {
   const ReplayScreen({super.key, required this.tripId});
@@ -20,33 +22,118 @@ class ReplayScreen extends ConsumerStatefulWidget {
 class _ReplayScreenState extends ConsumerState<ReplayScreen> {
   bool _busy = false;
 
-  Future<void> _openTravelBook() async {
+  Future<void> _generatePdfTravelBook() async {
+    setState(() => _busy = true);
+    try {
+      final cached = ref.read(replayProvider(widget.tripId)).valueOrNull;
+      final ReplayResponse replayData =
+          cached ?? await ref.read(replayProvider(widget.tripId).future);
+      if (replayData.days.isEmpty && replayData.stats.memories == 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No recorded memories or days found to export.'),
+          ),
+        );
+        return;
+      }
+
+      final expenseTotals = ref.read(expensesProvider(widget.tripId)).valueOrNull;
+      final balances = ref.read(balancesProvider(widget.tripId)).valueOrNull;
+
+      final pdfBytes = await PdfTravelBookGenerator.generate(
+        replay: replayData,
+        expenseTotals: expenseTotals,
+        balances: balances,
+      );
+
+      final tripName = replayData.trip.name.isNotEmpty ? replayData.trip.name : 'trip';
+      final safeName = FileExporter.sanitizeFilename('travel_book_${tripName.toLowerCase()}');
+      final filename = '$safeName.pdf';
+
+      final exporter = ref.read(fileExporterProvider);
+      final result = await exporter.saveBytesToCache(
+        filename: filename,
+        bytes: pdfBytes,
+        mimeType: 'application/pdf',
+      );
+
+      if (!mounted) return;
+      setState(() => _busy = false);
+
+      await showSafarSheet<void>(
+        context,
+        builder: (_) => ExportActionSheet(
+          result: result,
+          title: 'Travel Book PDF Ready',
+          subtitle: 'A beautifully formatted editorial memoir of your journey.',
+          formatLabel: 'Editorial PDF Book',
+          formatIcon: Icons.picture_as_pdf_outlined,
+          openActionLabel: 'Open PDF',
+          shareActionLabel: 'Share PDF',
+          infoBannerText:
+              'Private memories and unapproved groups are excluded. No personal data was uploaded externally.',
+          fileExporter: exporter,
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not generate travel book PDF: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openHtmlTravelBook() async {
     setState(() => _busy = true);
     try {
       final book = await ref
           .read(memoryRepositoryProvider)
           .travelBook(widget.tripId);
       if (!mounted) return;
+      if (book.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No recorded memories or days found to export.'),
+          ),
+        );
+        return;
+      }
+      final replayData = ref.read(replayProvider(widget.tripId)).valueOrNull;
+      final tripName = replayData?.trip.name ?? 'trip';
+      final safeName = FileExporter.sanitizeFilename(
+        'travel_book_${tripName.toLowerCase()}',
+      );
+      final filename = '$safeName.html';
+
+      final exporter = ref.read(fileExporterProvider);
+      final result = await exporter.saveToCache(
+        filename: filename,
+        content: book,
+        mimeType: 'text/html',
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+
       await showSafarSheet<void>(
         context,
-        builder: (_) => SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SafarSheetHeader(
-                title: 'Travel book',
-                subtitle:
-                    'Generated from approved events and memories you are allowed to see.',
-              ),
-              SelectableText(book, style: context.texts.bodyMedium),
-              const SizedBox(height: 12),
-              const InfoBanner(
-                icon: Icons.privacy_tip_outlined,
-                text:
-                    'Private memories and unapproved groups are excluded. Nothing here is shared publicly.',
-              ),
-            ],
-          ),
+        builder: (_) => ExportActionSheet(
+          result: result,
+          title: 'Travel book ready',
+          subtitle:
+              'Generated from approved events and memories you are allowed to see.',
+          formatLabel: 'HTML Document (Print-ready)',
+          formatIcon: Icons.menu_book_outlined,
+          openActionLabel: 'View in browser',
+          shareActionLabel: 'Share document',
+          infoBannerText:
+              'Private memories and unapproved groups are excluded. Nothing here is shared publicly.',
+          fileExporter: exporter,
         ),
       );
     } on ApiException catch (error) {
@@ -54,6 +141,11 @@ class _ReplayScreenState extends ConsumerState<ReplayScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not generate travel book: $error')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -160,9 +252,29 @@ class _ReplayScreenState extends ConsumerState<ReplayScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _busy ? null : _openTravelBook,
-                    icon: const Icon(Icons.menu_book_outlined, size: 18),
-                    label: const Text('Open travel book'),
+                    onPressed: _busy ? null : _generatePdfTravelBook,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: Text(
+                      _busy ? 'Generating Travel Book PDF...' : 'Generate Travel Book PDF',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _openHtmlTravelBook,
+                    icon: const Icon(Icons.html_outlined, size: 18),
+                    label: const Text('Export HTML Travel Book'),
                   ),
                 ),
                 const SizedBox(height: 22),

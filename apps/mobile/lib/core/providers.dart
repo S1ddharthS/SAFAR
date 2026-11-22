@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ai/image_feature_extractor.dart';
+import 'ai/speech_transcriber.dart';
 import 'config/env.dart';
 import 'models/common.dart';
 import 'models/discovery.dart';
@@ -14,9 +16,12 @@ import 'models/monitoring.dart';
 import 'models/planning.dart';
 import 'models/social.dart';
 import 'models/trip.dart';
+import 'native/file_exporter.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
 import 'network/cookie_jar.dart';
+import 'services/ocr_service.dart';
+import 'services/voice_recorder_service.dart';
 import 'repositories/assistant_repository.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/companion_repository.dart';
@@ -93,6 +98,28 @@ final socialRepositoryProvider = Provider<SocialRepository>(
 final companionRepositoryProvider = Provider<CompanionRepository>(
   (ref) => CompanionRepository(ref.watch(apiClientProvider)),
 );
+
+final fileExporterProvider = Provider<FileExporter>(
+  (ref) => const FileExporter(),
+);
+
+final ocrServiceProvider = Provider<OcrService>(
+  (ref) => const OcrService(),
+);
+
+final voiceRecorderServiceProvider = Provider<VoiceRecorderService>((ref) {
+  final service = VoiceRecorderService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+final imageFeatureExtractorProvider = Provider<ImageFeatureExtractor>(
+  (ref) => const ImageFeatureExtractor(),
+);
+
+final speechTranscriberProvider = Provider<SpeechTranscriber>((ref) {
+  return SpeechTranscriber();
+});
 
 // ---------------------------------------------------------------- account
 

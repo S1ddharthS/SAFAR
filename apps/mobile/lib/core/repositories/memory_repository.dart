@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/json.dart';
 import '../models/memories.dart';
 import '../models/monitoring.dart';
@@ -38,18 +40,22 @@ class MemoryRepository {
     ),
   );
 
-  /// Uploads an image and returns the server-issued media URL.
+  /// Uploads media (photo, video, voice) and returns the server-issued media URL.
   Future<String> uploadMedia(
     String tripId, {
     required List<int> bytes,
     required String filename,
     required String contentType,
+    ProgressCallback? onSendProgress,
+    CancelToken? cancelToken,
   }) async {
     final data = await _api.upload(
       '/api/trips/$tripId/media',
       bytes: bytes,
       filename: filename,
       contentType: contentType,
+      onSendProgress: onSendProgress,
+      cancelToken: cancelToken,
     );
     final url = jsonString(data['media_url']);
     if (url == null || url.isEmpty) {

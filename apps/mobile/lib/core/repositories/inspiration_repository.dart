@@ -17,11 +17,16 @@ class InspirationRepository {
     String tripId, {
     required String content,
     String sourceType = 'text',
+    String? mediaUrl,
   }) async {
     final data = jsonMap(
       await _api.post(
         '/api/trips/$tripId/inspirations',
-        data: {'source_type': sourceType, 'content': content},
+        data: {
+          'source_type': sourceType,
+          'content': content,
+          if (mediaUrl != null && mediaUrl.isNotEmpty) 'media_url': mediaUrl,
+        },
       ),
     );
     return InspirationItem(

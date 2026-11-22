@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -330,7 +333,12 @@ class _MemoryCard extends StatelessWidget {
           ),
           if (mediaUrl != null) ...[
             const SizedBox(height: 10),
-            SafarImage(url: mediaUrl, height: 190, radius: 16),
+            if (memory.kind == 'voice')
+              _VoicePlayer(url: mediaUrl)
+            else if (memory.kind == 'video')
+              _VideoCard(url: mediaUrl, memory: memory)
+            else
+              SafarImage(url: mediaUrl, height: 190, radius: 16),
           ],
           if (memory.textContent != null && memory.textContent!.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -410,18 +418,46 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
   String _visibility = 'trip';
   bool _busy = false;
   String? _error;
+
+  // Media selection
+  String _mediaMode = 'text'; // 'text', 'photo', 'video', 'voice'
+
+  // Photo state
   XFile? _photo;
   Uint8List? _photoBytes;
   String? _photoType;
 
-  static const _maxPhotoBytes = 25 * 1024 * 1024;
+  // Video state
+  XFile? _video;
+  Uint8List? _videoBytes;
+  String? _videoName;
+
+  // Voice recording state
+  String? _voiceFilePath;
+  Uint8List? _voiceBytes;
+  bool _isRecording = false;
+  bool _isPaused = false;
+  bool _isPlayingPreview = false;
+  Duration _voiceDuration = Duration.zero;
+
+  // Speech to text state
+  bool _isTranscribing = false;
+
+  // Upload progress & cancellation
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
+  CancelToken? _cancelToken;
+
+  static const _maxMediaBytes = 25 * 1024 * 1024;
 
   @override
   void dispose() {
     _text.dispose();
+    _cancelToken?.cancel('Sheet closed');
     super.dispose();
   }
 
+  // --- Photo Picking ---
   Future<void> _choosePhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -447,12 +483,12 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
     try {
       final file = await _picker.pickImage(
         source: source,
-        maxWidth: 1600,
-        imageQuality: 82,
+        maxWidth: 1920,
+        imageQuality: 85,
       );
       if (file == null) return;
       final bytes = await file.readAsBytes();
-      if (bytes.lengthInBytes > _maxPhotoBytes) {
+      if (bytes.lengthInBytes > _maxMediaBytes) {
         if (!mounted) return;
         setState(() => _error = 'Photos are limited to 25 MB.');
         return;
@@ -461,18 +497,185 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
       setState(() {
         _photo = file;
         _photoBytes = bytes;
-        _photoType = _mimeFor(file);
+        _photoType = _mimeForPhoto(file);
+        _mediaMode = 'photo';
+        _video = null;
+        _videoBytes = null;
+        _voiceFilePath = null;
+        _voiceBytes = null;
         _error = null;
       });
-    } on Object {
+    } catch (e) {
       if (!mounted) return;
-      setState(
-        () => _error = 'The photo picker is not available on this device.',
-      );
+      setState(() => _error = 'Could not access photo library: $e');
     }
   }
 
-  static String _mimeFor(XFile file) {
+  // --- Video Picking ---
+  Future<void> _chooseVideo() async {
+    try {
+      final file = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 5),
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.lengthInBytes > _maxMediaBytes) {
+        if (!mounted) return;
+        setState(() => _error = 'Videos are limited to 25 MB.');
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _video = file;
+        _videoBytes = bytes;
+        _videoName = file.name;
+        _mediaMode = 'video';
+        _photo = null;
+        _photoBytes = null;
+        _voiceFilePath = null;
+        _voiceBytes = null;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not select video: $e');
+    }
+  }
+
+  // --- Voice Recording ---
+  Future<void> _startRecording() async {
+    final recorder = ref.read(voiceRecorderServiceProvider);
+    final permitted = await recorder.hasPermission();
+    if (!permitted) {
+      setState(() => _error = 'Microphone permission is required to record voice memories.');
+      return;
+    }
+    final path = await recorder.startRecording();
+    if (path == null) {
+      setState(() => _error = 'Could not start voice recording.');
+      return;
+    }
+    setState(() {
+      _isRecording = true;
+      _isPaused = false;
+      _voiceFilePath = path;
+      _mediaMode = 'voice';
+      _photo = null;
+      _photoBytes = null;
+      _video = null;
+      _videoBytes = null;
+      _error = null;
+    });
+  }
+
+  Future<void> _pauseResumeRecording() async {
+    final recorder = ref.read(voiceRecorderServiceProvider);
+    if (_isPaused) {
+      await recorder.resumeRecording();
+      setState(() => _isPaused = false);
+    } else {
+      await recorder.pauseRecording();
+      setState(() => _isPaused = true);
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    final recorder = ref.read(voiceRecorderServiceProvider);
+    final path = await recorder.stopRecording();
+    if (path != null) {
+      final file = File(path);
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _isRecording = false;
+          _isPaused = false;
+          _voiceFilePath = path;
+          _voiceBytes = bytes;
+          _voiceDuration = recorder.recordingDuration;
+        });
+        return;
+      }
+    }
+    setState(() {
+      _isRecording = false;
+      _isPaused = false;
+    });
+  }
+
+  Future<void> _cancelRecording() async {
+    final recorder = ref.read(voiceRecorderServiceProvider);
+    await recorder.cancelRecording();
+    setState(() {
+      _isRecording = false;
+      _isPaused = false;
+      _isPlayingPreview = false;
+      _voiceFilePath = null;
+      _voiceBytes = null;
+      _voiceDuration = Duration.zero;
+      _mediaMode = 'text';
+    });
+  }
+
+  Future<void> _toggleAudioPreview() async {
+    final recorder = ref.read(voiceRecorderServiceProvider);
+    if (_isPlayingPreview) {
+      await recorder.stopPreview();
+      setState(() => _isPlayingPreview = false);
+    } else {
+      setState(() => _isPlayingPreview = true);
+      await recorder.playPreview(onComplete: () {
+        if (mounted) setState(() => _isPlayingPreview = false);
+      });
+    }
+  }
+
+  // --- On-Device Speech Recognition ---
+  Future<void> _toggleSpeechRecognition() async {
+    final transcriber = ref.read(speechTranscriberProvider);
+    if (_isTranscribing) {
+      await transcriber.stopListening();
+      setState(() => _isTranscribing = false);
+      return;
+    }
+
+    final available = await transcriber.initialize();
+    if (!available) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Speech recognition is not available or microphone permission was denied.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isTranscribing = true);
+    final initialText = _text.text.trim();
+
+    await transcriber.startListening(
+      onText: (transcription) {
+        if (!mounted) return;
+        setState(() {
+          _text.text = initialText.isEmpty ? transcription : '$initialText $transcription';
+        });
+      },
+    );
+  }
+
+  void _cancelUpload() {
+    _cancelToken?.cancel('Upload cancelled by user');
+    setState(() {
+      _isUploading = false;
+      _busy = false;
+      _uploadProgress = 0.0;
+      _error = 'Upload cancelled.';
+    });
+  }
+
+  static String _mimeForPhoto(XFile file) {
     final declared = file.mimeType;
     if (declared != null && declared.startsWith('image/')) return declared;
     final name = file.name.toLowerCase();
@@ -483,53 +686,121 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
 
   Future<void> _submit() async {
     final text = _text.text.trim();
-    final photo = _photo;
-    if (photo == null && text.length < 2) {
+    final hasMedia = _photo != null || _video != null || _voiceBytes != null;
+
+    if (!hasMedia && text.length < 2) {
       setState(() => _error = 'Write a little more so the memory means something.');
       return;
     }
-    if (photo != null && text.length > 1000) {
-      setState(() => _error = 'Photo captions are limited to 1000 characters.');
+    if (hasMedia && text.length > 1000) {
+      setState(() => _error = 'Captions are limited to 1000 characters.');
       return;
     }
+
     setState(() {
       _busy = true;
+      _isUploading = hasMedia;
+      _uploadProgress = 0.0;
       _error = null;
     });
+
+    _cancelToken = CancelToken();
+
     try {
       final repository = ref.read(memoryRepositoryProvider);
       String? mediaUrl;
       String? mediaType;
-      if (photo != null) {
+      String kind = 'text';
+
+      if (_photo != null && _photoBytes != null) {
+        kind = 'photo';
+        mediaType = _photoType ?? 'image/jpeg';
         mediaUrl = await repository.uploadMedia(
           widget.tripId,
           bytes: _photoBytes!,
-          filename: photo.name,
-          contentType: _photoType ?? 'image/jpeg',
+          filename: _photo!.name,
+          contentType: mediaType,
+          onSendProgress: (sent, total) {
+            if (total > 0 && mounted) {
+              setState(() => _uploadProgress = sent / total);
+            }
+          },
+          cancelToken: _cancelToken,
         );
-        mediaType = _photoType ?? 'image/jpeg';
+      } else if (_video != null && _videoBytes != null) {
+        kind = 'video';
+        mediaType = 'video/mp4';
+        mediaUrl = await repository.uploadMedia(
+          widget.tripId,
+          bytes: _videoBytes!,
+          filename: _videoName ?? 'video.mp4',
+          contentType: mediaType,
+          onSendProgress: (sent, total) {
+            if (total > 0 && mounted) {
+              setState(() => _uploadProgress = sent / total);
+            }
+          },
+          cancelToken: _cancelToken,
+        );
+      } else if (_voiceBytes != null) {
+        kind = 'voice';
+        mediaType = 'audio/wav';
+        final voiceName = _voiceFilePath != null
+            ? _voiceFilePath!.split(RegExp(r'[\\/]')).last
+            : 'voice_note.wav';
+        mediaUrl = await repository.uploadMedia(
+          widget.tripId,
+          bytes: _voiceBytes!,
+          filename: voiceName,
+          contentType: mediaType,
+          onSendProgress: (sent, total) {
+            if (total > 0 && mounted) {
+              setState(() => _uploadProgress = sent / total);
+            }
+          },
+          cancelToken: _cancelToken,
+        );
       }
+
       await repository.create(
         widget.tripId,
         text: text,
         visibility: _visibility,
-        kind: photo == null ? 'text' : 'photo',
-        caption: photo == null ? null : text,
+        kind: kind,
+        caption: hasMedia ? text : null,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
       );
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
+    } on DioException catch (dioError) {
+      if (!mounted) return;
+      if (CancelToken.isCancel(dioError)) {
+        setState(() => _error = 'Upload was cancelled.');
+      } else {
+        setState(() => _error = dioError.message ?? 'Upload network error.');
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Failed to save memory: $error');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _isUploading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.safar;
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,60 +809,270 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
             title: 'Add a memory',
             subtitle: 'Captured now, kept for the trip or just for you.',
           ),
+
+          // Caption / Text field
           TextField(
             controller: _text,
-            minLines: 4,
-            maxLines: 8,
+            minLines: 3,
+            maxLines: 6,
             maxLength: 4000,
-            autofocus: _photo == null,
             decoration: InputDecoration(
-              hintText: _photo == null
+              hintText: _mediaMode == 'text'
                   ? 'The light on the water, the wrong turn that became the day…'
-                  : 'Add a caption (optional)',
+                  : 'Add a caption or notes (optional)',
+              suffixIcon: IconButton(
+                tooltip: _isTranscribing ? 'Stop dictation' : 'Dictate with on-device speech recognition',
+                icon: Icon(
+                  _isTranscribing ? Icons.mic : Icons.mic_none,
+                  color: _isTranscribing ? palette.ember : palette.muted,
+                ),
+                onPressed: _busy ? null : _toggleSpeechRecognition,
+              ),
             ),
           ),
-          const SizedBox(height: 6),
+          if (_isTranscribing) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.record_voice_over, size: 14, color: palette.ember),
+                const SizedBox(width: 6),
+                Text('Listening with on-device speech recognition...', style: context.texts.labelSmall?.copyWith(color: palette.ember)),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+
+          // Photo Preview
           if (_photoBytes != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.memory(
-                _photoBytes!,
-                height: 168,
-                width: double.infinity,
-                fit: BoxFit.cover,
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    _photoBytes!,
+                    height: 168,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.black54,
+                    radius: 16,
+                    child: IconButton(
+                      iconSize: 16,
+                      color: Colors.white,
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Remove photo',
+                      onPressed: _busy ? null : () => setState(() {
+                        _photo = null;
+                        _photoBytes = null;
+                        _photoType = null;
+                        _mediaMode = 'text';
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Video Preview
+          if (_videoBytes != null) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: palette.raised,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: palette.line),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: palette.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.videocam_outlined, color: palette.ember, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_videoName ?? 'Selected video', style: context.texts.titleSmall, overflow: TextOverflow.ellipsis),
+                        Text('${(_videoBytes!.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)} MB · MP4 Video', style: context.texts.labelSmall?.copyWith(color: palette.muted)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: _busy ? null : () => setState(() {
+                      _video = null;
+                      _videoBytes = null;
+                      _videoName = null;
+                      _mediaMode = 'text';
+                    }),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
           ],
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _choosePhoto,
-                icon: Icon(
-                  _photo == null
-                      ? Icons.add_a_photo_outlined
-                      : Icons.autorenew_rounded,
-                  size: 17,
-                ),
-                label: Text(_photo == null ? 'Add photo' : 'Replace photo'),
+
+          // Voice Recording Active or Completed View
+          if (_isRecording || _voiceBytes != null) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: palette.raised,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _isRecording ? palette.ember : palette.line),
               ),
-              if (_photo != null)
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                          _photo = null;
-                          _photoBytes = null;
-                          _photoType = null;
-                        }),
-                  child: const Text('Remove'),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: _isRecording ? palette.ember.withValues(alpha: 0.15) : palette.surface,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          _isRecording ? Icons.mic : Icons.audiotrack,
+                          color: _isRecording ? palette.ember : palette.jade,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isRecording ? (_isPaused ? 'Recording paused' : 'Recording voice memory...') : 'Voice memory ready',
+                              style: context.texts.titleSmall,
+                            ),
+                            Text(
+                              _isRecording
+                                  ? '${ref.read(voiceRecorderServiceProvider).recordingDuration.inSeconds}s'
+                                  : '${_voiceDuration.inSeconds}s · WAV Audio',
+                              style: context.texts.labelSmall?.copyWith(color: palette.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_voiceBytes != null && !_isRecording)
+                        IconButton(
+                          tooltip: _isPlayingPreview ? 'Stop preview' : 'Play preview',
+                          icon: Icon(_isPlayingPreview ? Icons.stop_circle_outlined : Icons.play_circle_outline, size: 28, color: palette.ember),
+                          onPressed: _busy ? null : _toggleAudioPreview,
+                        ),
+                    ],
+                  ),
+                  if (_isRecording) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pauseResumeRecording,
+                            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 18),
+                            label: Text(_isPaused ? 'Resume' : 'Pause'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _stopRecording,
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('Keep audio'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          onPressed: _busy ? null : _cancelRecording,
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          label: const Text('Delete and re-record'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Media Selection Toolbar
+          if (!_isRecording && _photoBytes == null && _videoBytes == null && _voiceBytes == null) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _choosePhoto,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 17),
+                  label: const Text('Add photo'),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _chooseVideo,
+                  icon: const Icon(Icons.videocam_outlined, size: 17),
+                  label: const Text('Add video'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _startRecording,
+                  icon: const Icon(Icons.mic_none_outlined, size: 17),
+                  label: const Text('Record voice'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Upload Progress Bar
+          if (_isUploading) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: _uploadProgress > 0 ? _uploadProgress : null,
+                minHeight: 6,
+                backgroundColor: palette.raised,
+                color: palette.ember,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Uploading media (${(_uploadProgress * 100).toInt()}%)...',
+                  style: context.texts.labelSmall?.copyWith(color: palette.muted),
+                ),
+                TextButton(
+                  onPressed: _cancelUpload,
+                  child: const Text('Cancel upload'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Visibility selector
           const Eyebrow('Who can see it'),
           const SizedBox(height: 8),
           Wrap(
@@ -624,7 +1105,7 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: _busy ? null : _submit,
+              onPressed: (_busy || _isRecording) ? null : _submit,
               child: _busy
                   ? const SizedBox(
                       width: 18,
@@ -632,6 +1113,153 @@ class _MemorySheetState extends ConsumerState<_MemorySheet> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('Keep memory'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Plays voice memory audio in the timeline using audioplayers.
+class _VoicePlayer extends StatefulWidget {
+  const _VoicePlayer({required this.url});
+
+  final String url;
+
+  @override
+  State<_VoicePlayer> createState() => _VoicePlayerState();
+}
+
+class _VoicePlayerState extends State<_VoicePlayer> {
+  final _player = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerStateChanged.listen((state) {
+      if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
+    });
+    _player.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _player.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      await _player.play(UrlSource(widget.url));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.safar;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.line),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: palette.ember.withValues(alpha: 0.15),
+            radius: 20,
+            child: IconButton(
+              icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: palette.ember),
+              onPressed: _toggle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Voice memory', style: context.texts.titleSmall),
+                const SizedBox(height: 2),
+                Text(
+                  '${_position.inSeconds}s / ${_duration.inSeconds > 0 ? '${_duration.inSeconds}s' : 'Audio'}',
+                  style: context.texts.labelSmall?.copyWith(color: palette.muted),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.graphic_eq, color: palette.muted, size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+/// Displays a video memory card in the timeline.
+class _VideoCard extends StatelessWidget {
+  const _VideoCard({required this.url, required this.memory});
+
+  final String url;
+  final Memory memory;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.safar;
+
+    return Container(
+      height: 180,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.line),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.video_collection_outlined, size: 48, color: palette.ember),
+              const SizedBox(height: 8),
+              Text(
+                memory.caption ?? 'Video Memory',
+                style: context.texts.titleSmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text('MP4 Video', style: context.texts.labelSmall?.copyWith(color: palette.muted)),
+            ],
+          ),
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.play_circle_fill, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text('Video', style: context.texts.labelSmall?.copyWith(color: Colors.white)),
+                ],
+              ),
             ),
           ),
         ],

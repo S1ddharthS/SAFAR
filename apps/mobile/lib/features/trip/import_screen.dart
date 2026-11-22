@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/inspirations.dart';
 import '../../core/network/api_exception.dart';
@@ -357,9 +361,15 @@ class _ImportSheet extends ConsumerStatefulWidget {
 
 class _ImportSheetState extends ConsumerState<_ImportSheet> {
   final _content = TextEditingController();
+  final _picker = ImagePicker();
   String _sourceType = 'text';
   bool _busy = false;
   String? _error;
+
+  XFile? _imageFile;
+  Uint8List? _imageBytes;
+  bool _ocrScanning = false;
+  String? _ocrStatus;
 
   @override
   void dispose() {
@@ -367,25 +377,105 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
     super.dispose();
   }
 
+  Future<void> _chooseImage(ImageSource source) async {
+    try {
+      final file = await _picker.pickImage(
+        source: source,
+        maxWidth: 2048,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.lengthInBytes > 25 * 1024 * 1024) {
+        if (!mounted) return;
+        setState(() => _error = 'Images are limited to 25 MB.');
+        return;
+      }
+
+      setState(() {
+        _imageFile = file;
+        _imageBytes = bytes;
+        _ocrScanning = true;
+        _ocrStatus = 'Scanning image with on-device OCR...';
+        _error = null;
+      });
+
+      // Run on-device OCR
+      final ocrService = ref.read(ocrServiceProvider);
+      final result = await ocrService.extractText(File(file.path));
+
+      if (!mounted) return;
+      setState(() {
+        _ocrScanning = false;
+        if (result.hasText) {
+          final prefix = _content.text.trim().isEmpty ? '' : '${_content.text.trim()}\n\n';
+          _content.text = '$prefix${result.text}';
+          _ocrStatus = 'Read ${result.linesCount} lines (${result.text.length} characters) via on-device OCR.';
+        } else {
+          _ocrStatus = result.error ?? 'No readable text detected in this image. You can type notes manually below.';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ocrScanning = false;
+        _error = 'Could not access or process the selected image: $e';
+      });
+    }
+  }
+
+  void _clearImage() {
+    setState(() {
+      _imageFile = null;
+      _imageBytes = null;
+      _ocrScanning = false;
+      _ocrStatus = null;
+    });
+  }
+
   Future<void> _submit() async {
     final content = _content.text.trim();
-    if (content.length < 2) {
+    if (_sourceType != 'image' && content.length < 2) {
       setState(() => _error = 'Add at least a couple of words to import.');
       return;
     }
+    if (_sourceType == 'image' && _imageFile == null && content.length < 2) {
+      setState(() => _error = 'Select an image or write notes to import.');
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
     });
+
     try {
-      await ref
-          .read(inspirationRepositoryProvider)
-          .create(widget.tripId, content: content, sourceType: _sourceType);
+      String? mediaUrl;
+      if (_sourceType == 'image' && _imageFile != null && _imageBytes != null) {
+        // Upload the image so it's safely attached to the trip
+        mediaUrl = await ref.read(memoryRepositoryProvider).uploadMedia(
+          widget.tripId,
+          bytes: _imageBytes!,
+          filename: _imageFile!.name,
+          contentType: _imageFile!.mimeType ?? 'image/jpeg',
+        );
+      }
+
+      await ref.read(inspirationRepositoryProvider).create(
+        widget.tripId,
+        content: content.isEmpty ? 'Uploaded itinerary image' : content,
+        sourceType: _sourceType == 'image' ? 'image_url' : _sourceType,
+        mediaUrl: mediaUrl,
+      );
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Failed to import inspiration: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -393,6 +483,8 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.safar;
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,8 +492,8 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
           const SafarSheetHeader(
             title: 'Import inspiration',
             subtitle:
-                'Paste a note, caption or link. SAFAR extracts candidates from the catalog — '
-                'nothing is added until you review it.',
+                'Paste a note, link, or scan an image with on-device OCR. SAFAR extracts '
+                'catalog candidates — nothing is added until you review it.',
           ),
           Wrap(
             spacing: 8,
@@ -409,15 +501,120 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
               for (final (type, label) in const [
                 ('text', 'Note'),
                 ('link', 'Link'),
+                ('image', 'Image & OCR'),
               ])
                 ChoiceChip(
                   label: Text(label),
                   selected: _sourceType == type,
-                  onSelected: (_) => setState(() => _sourceType = type),
+                  onSelected: (_) => setState(() {
+                    _sourceType = type;
+                    _error = null;
+                  }),
                 ),
             ],
           ),
           const SizedBox(height: 12),
+
+          // Image & OCR Section
+          if (_sourceType == 'image') ...[
+            if (_imageBytes != null) ...[
+              Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      height: 160,
+                      width: double.infinity,
+                      color: palette.surface,
+                      child: Image.memory(
+                        _imageBytes!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Center(
+                          child: Icon(Icons.broken_image_outlined, size: 40),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      radius: 16,
+                      child: IconButton(
+                        iconSize: 16,
+                        color: Colors.white,
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Remove image',
+                        onPressed: _busy ? null : _clearImage,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _imageFile?.name ?? 'Selected image',
+                      style: context.texts.labelSmall?.copyWith(color: palette.muted),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _chooseImage(ImageSource.gallery),
+                    icon: const Icon(Icons.autorenew_rounded, size: 16),
+                    label: const Text('Replace'),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _chooseImage(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library_outlined, size: 18),
+                      label: const Text('Choose photo'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _chooseImage(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                      label: const Text('Take photo'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (_ocrScanning) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('Reading text with on-device OCR...', style: context.texts.labelSmall),
+                ],
+              ),
+            ] else if (_ocrStatus != null) ...[
+              const SizedBox(height: 8),
+              InfoBanner(
+                text: _ocrStatus!,
+                icon: Icons.document_scanner_outlined,
+                tone: ChipTone.jade,
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+
           TextField(
             controller: _content,
             minLines: 4,
@@ -426,7 +623,9 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
             decoration: InputDecoration(
               hintText: _sourceType == 'link'
                   ? 'https://…'
-                  : 'e.g. A quiet ceramics workshop near the river, open Thursdays',
+                  : _sourceType == 'image'
+                      ? 'Extracted text appears here. You can review, edit, or add instructions...'
+                      : 'e.g. A quiet ceramics workshop near the river, open Thursdays',
             ),
           ),
           if (_sourceType == 'link') ...[
@@ -444,7 +643,7 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: _busy ? null : _submit,
+              onPressed: (_busy || _ocrScanning) ? null : _submit,
               child: _busy
                   ? const SizedBox(
                       width: 18,

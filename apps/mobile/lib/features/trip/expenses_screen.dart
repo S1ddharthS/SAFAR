@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/expenses.dart';
 import '../../core/models/trip.dart';
+import '../../core/native/file_exporter.dart';
+import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../core/theme/safar_theme.dart';
 import '../../core/utils/format.dart';
@@ -21,6 +23,65 @@ class ExpensesScreen extends ConsumerStatefulWidget {
 
 class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
   bool _busy = false;
+
+  Future<void> _exportCsv(Trip? trip) async {
+    setState(() => _busy = true);
+    try {
+      final csv = await ref
+          .read(expenseRepositoryProvider)
+          .exportCsv(widget.tripId);
+      if (!mounted) return;
+      if (csv.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No expenses recorded to export.')),
+        );
+        return;
+      }
+      final tripName = trip?.name ?? 'trip';
+      final safeName = FileExporter.sanitizeFilename(
+        'expenses_${tripName.toLowerCase()}',
+      );
+      final filename = '$safeName.csv';
+
+      final exporter = ref.read(fileExporterProvider);
+      final result = await exporter.saveToCache(
+        filename: filename,
+        content: csv,
+        mimeType: 'text/csv',
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+
+      await showSafarSheet<void>(
+        context,
+        builder: (_) => ExportActionSheet(
+          result: result,
+          title: 'Expenses CSV ready',
+          subtitle:
+              'RFC 4180 compliant CSV formatted for spreadsheet software.',
+          formatLabel: 'CSV Spreadsheet',
+          formatIcon: Icons.table_chart_outlined,
+          openActionLabel: 'Open in app',
+          shareActionLabel: 'Share CSV',
+          infoBannerText:
+              'Shared expenses are visible to active trip members. Personal budget limits remain private.',
+          fileExporter: exporter,
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export expenses: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(expensesProvider(widget.tripId));
@@ -303,39 +364,14 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
         actions: [
           IconButton(
             tooltip: 'Export CSV',
-            onPressed: () async {
-              try {
-                final csv = await ref
-                    .read(expenseRepositoryProvider)
-                    .exportCsv(widget.tripId);
-                if (!context.mounted) return;
-                await showSafarSheet<void>(
-                  context,
-                  builder: (sheetContext) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SafarSheetHeader(
-                        title: 'CSV export',
-                        subtitle: 'Copy this into a spreadsheet. It stays on your device.',
-                      ),
-                      SelectableText(
-                        csv,
-                        style: context.texts.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              } on Object catch (error) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(error.toString())),
-                );
-              }
-            },
-            icon: const Icon(Icons.download_outlined),
+            onPressed: _busy ? null : () => _exportCsv(trip),
+            icon: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_outlined),
           ),
           const SizedBox(width: 4),
         ],

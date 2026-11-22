@@ -2,6 +2,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Voice memories & on-device speech recognition -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Media gallery access for photos and videos (Android 13+) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <!-- Location is used for nearby crowds and companion meetups, never for
          publishing a member's exact position, so it must not be required. -->
     <uses-feature android:name="android.hardware.location" android:required="false"/>

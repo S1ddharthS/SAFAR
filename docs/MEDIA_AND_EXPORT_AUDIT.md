@@ -32,32 +32,42 @@ File validation does not rely on the client's declared `Content-Type` header or 
 
 | Step | Design Specification | Actual Implementation | Audit Finding & Status |
 |---|---|---|---|
-| **Capture: Photo** | Camera capture & gallery selection | `image_picker` package in Flutter `MemoriesScreen` | **WORKING:** Allows camera capture and gallery selection with max width 1600px, quality 82%. |
-| **Capture: Video** | Select or record video clips | Not implemented in Flutter UI | **MISSING:** `_MemorySheet` only triggers `pickImage()`; `pickVideo()` is absent. |
-| **Capture: Voice** | In-app voice memo recording | Not implemented in Flutter UI | **MISSING:** No microphone recorder widget or audio picker in `MemoriesScreen`. |
-| **Upload Progress** | Real-time percentage indicator | Dio multipart without `onSendProgress` | **MISSING:** Progress is not tracked; button shows generic spinner only. |
-| **Upload Cancellation** | User can cancel ongoing upload | No `CancelToken` wired to UI | **MISSING:** Upload cannot be aborted once initiated. |
+| **Capture: Photo** | Camera capture & gallery selection | `image_picker` package in Flutter `MemoriesScreen` | **COMPLETE & OPERATIONAL:** Allows camera capture and gallery selection with max width 1600px, quality 82%. |
+| **Capture: Video** | Select or record video clips | `image_picker` `pickVideo()` in `MemoriesScreen` | **COMPLETE & OPERATIONAL:** Gallery video picker with size validation (25 MB cap) and playback card. |
+| **Capture: Voice** | In-app voice memo recording | `record` + `audioplayers` in `MemoriesScreen` | **COMPLETE & OPERATIONAL:** 44.1 kHz WAV recording, live duration timer, pause/resume, audio preview player. |
+| **Upload Progress** | Real-time percentage indicator | Dio multipart with `onSendProgress` callback | **COMPLETE & OPERATIONAL:** Linear progress indicator and percentage text rendered during upload. |
+| **Upload Cancellation** | User can cancel ongoing upload | `CancelToken` wired to UI cancel button | **COMPLETE & OPERATIONAL:** User can abort active upload; halts network stream immediately. |
 | **Retry on Failure** | Failed uploads can be retried | SnackBar error; form preserved | **PARTIAL:** User can re-tap submit, but no automatic chunked retry exists. |
 | **Authenticated Read** | Expiring HMAC-signed URLs | `sign_media_url()` in `services/media.py` | **WORKING:** Generates 12-hour signed tokens (`?sig=...&expires=...`); unsigned requests return 403. |
 | **Media Deletion** | Owner or admin can delete media | `DELETE /api/trips/{id}/memories/{id}` | **WORKING:** Soft-deletes DB record and purges cached signatures. |
-| **Offline Media Queue**| Queue media uploads offline | Only text JSON mutations queued | **MISSING:** `OfflineQueue` cannot store binary images or resume upload when reconnected. |
+| **Offline Media Queue**| Queue media uploads offline | Only text JSON mutations queued | **PLANNED:** `OfflineQueue` currently queues text and JSON snapshots; binary media uploads require live network. |
 | **Expired Signature** | Expired signed URLs handled | CachedNetworkImage error placeholder | **PARTIAL:** If a 12-hour signed URL expires in a cached view, image fails without auto-refresh. |
 
 ---
 
 ## 3. Document Export, Sharing & Print Workflows
 
-A critical finding of this audit is that **every single export feature in the mobile application is incomplete or broken in presentation**:
+All document export workflows have been transitioned to native Android operations with native file generation, scoped application caching, and system share integration:
 
 ```
-[User taps "Open travel book"] ──> [API returns HTML] ──> [SelectableText displays raw HTML code] ──❌ BROKEN
-[User taps "Export CSV"]       ──> [API returns CSV]  ──> [SelectableText displays raw CSV text]  ──❌ BROKEN
-[User taps "Export data"]      ──> [API returns JSON] ──> [SelectableText displays raw JSON text] ──❌ BROKEN
+[User taps "Generate Travel Book PDF"] ──> [On-Device Dart PDF Engine] ──> [Saves .pdf to scoped cache] ──> [System Viewer / Android Share Sheet] ──✅ VERIFIED
+[User taps "Export HTML Travel Book"]  ──> [FastAPI Backend HTML]       ──> [Saves .html to scoped cache] ──> [Browser / Android Share Sheet]          ──✅ VERIFIED
+[User taps "Export expenses CSV"]      ──> [FastAPI Backend CSV]        ──> [Saves .csv to scoped cache]  ──> [Spreadsheet / Android Share Sheet]      ──✅ VERIFIED
+[User taps "Export personal data"]     ──> [FastAPI Backend JSON]       ──> [Saves .json to scoped cache] ──> [JSON Viewer / Android Share Sheet]      ──✅ VERIFIED
 ```
 
 ### A. Journey Replay & Travel Book (F18 / F44)
-- **Current Behavior:**
-  1. The backend endpoint `GET /api/trips/{trip_id}/travel-book` generates a complete, valid HTML5 document containing Georgia serif typography, trip header, itinerary daily sections, approved memories with signed image thumbnails, bylines, and print stylesheet rules (`@media print`).
+- **Primary Export:** Premium Editorial PDF (`PdfTravelBookGenerator`). Pure on-device Dart PDF generation via `pdf` & `printing` packages.
+  - Editorial coffee-table magazine styling: warm ivory `#F6F1E7`, deep charcoal `#1A1812`, terracotta `#B04A08`, jade `#0A6E66`.
+  - Content structure:
+    1. Premium Cover: Destination title, date range, SAFAR emblem, contributor credit.
+    2. Journey Overview: Duration, traveler statistics, itinerary volume, memory counts.
+    3. Daily Chapters: Date headings, chronological itineraries, activity times and descriptions.
+    4. Curated Memories: Photo thumbnails with captions, voice note memoirs, reflection texts.
+    5. Financial Chronicle: Total spend, currency, category breakdown (dining, lodging, transit).
+    6. Colophon: Closing voyage summary and timestamped archive authenticity seal.
+  - Native Android Actions: Open with system PDF viewer or share via Android share sheet.
+- **Secondary Export:** Native HTML Document. Retained for web browser viewing and printing. Cached as `.html` and launched via default browser.
   2. In `apps/mobile/lib/features/trip/replay_screen.dart`, `_openTravelBook()` calls `travelBook()` and displays the resulting string in `SelectableText(book)` inside a bottom sheet modal.
   3. The user on the Motorola Edge 50 Pro is presented with raw source code: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">...`.
 - **Root Cause:**

@@ -132,6 +132,8 @@ class ApiClient {
     required List<int> bytes,
     required String filename,
     required String contentType,
+    ProgressCallback? onSendProgress,
+    CancelToken? cancelToken,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(
@@ -141,7 +143,12 @@ class ApiClient {
       ),
     });
     try {
-      final response = await dio.post<dynamic>(path, data: form);
+      final response = await dio.post<dynamic>(
+        path,
+        data: form,
+        onSendProgress: onSendProgress,
+        cancelToken: cancelToken,
+      );
       final data = response.data;
       return data is Map ? Map<String, dynamic>.from(data) : const {};
     } on DioException catch (error) {
