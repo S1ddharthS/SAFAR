@@ -6,7 +6,7 @@
 **Step:** 1 — Repository Baseline & Release Stabilisation  
 **Release Target:** SAFAR 1.0.0  
 **Git Branch:** `master`  
-**Baseline Commit Hash:** `e84e5f5d7f5d6e7992a0588da0e128e96761a3c5` (Short: `e84e5f5`)  
+**Baseline Commit Hash:** `1cd0cea45e93175e190787140874fb01ef3d8d68` (Short: `1cd0cea`)  
 **Commit Message:** `Initial SAFAR 1.0.0 release baseline`  
 **Working Tree State:** Clean (0 uncommitted changes, 0 untracked files)  
 **Status:** **STEP 1 COMPLETE — BASELINE SECURED & VERIFIED**
@@ -19,19 +19,19 @@ In Phase 14 Step 1, a clean, reproducible, and secure Git baseline was establish
 
 Before committing, an exhaustive audit of all untracked files was performed. Crucially, the local development media storage directory (`services/api/storage/`), which contained user-uploaded images, was identified as unprotected by the previous `.gitignore`. The root [.gitignore](file:///c:/Users/siddharth/Desktop/SAFAR/.gitignore) was hardened to comprehensively exclude all media directories, local databases, environment secrets, signing keys, backup dumps, and build caches, while preserving safe configuration templates ([.env.example](file:///c:/Users/siddharth/Desktop/SAFAR/.env.example)).
 
-The initial release baseline commit (`c567ee4`) was created with exactly 429 tracked project source and documentation files. No secrets, credentials, or private media entered the repository. All regression suites continue to pass 100% on this commit.
+The authoritative release baseline commit (`1cd0cea`) was created with exactly 429 tracked project source and documentation files. No secrets, credentials, or private media entered the repository. All regression suites continue to pass 100% on this commit.
 
 ---
 
 ### 1. Git Baseline Identification & Commit Details
 
 - **Branch:** `master`
-- **Initial Commit Hash:** `c567ee44ad42e82e8502a4e792317e0f4b1bd7e1`
-- **Short Hash:** `c567ee4`
+- **Authoritative Baseline Commit Hash:** `1cd0cea45e93175e190787140874fb01ef3d8d68`
+- **Short Hash:** `1cd0cea`
 - **Root Commit Summary:**
   ```text
-  [master (root-commit) c567ee4] Initial SAFAR 1.0.0 release baseline
-   429 files changed, 534799 insertions(+)
+  [master 1cd0cea] Initial SAFAR 1.0.0 release baseline
+   429 files changed, 534935 insertions(+)
   ```
 - **Remote Push:** None. The repository remains strictly local.
 - **Release Tags:** None. No Git tag was created (awaiting explicit release command).
@@ -134,3 +134,4 @@ All healthy background services remain running undisturbed:
 - No external accounts, infrastructure, or domains were purchased.
 - No healthy background processes were stopped.
 - Execution has halted awaiting user review and approval before proceeding to Phase 14 Step 2.
+
