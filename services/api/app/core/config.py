@@ -71,6 +71,11 @@ class Settings:
             raise RuntimeError(
                 "SAFAR_MEDIA_BACKEND=memory is not allowed in production/staging"
             )
+        self.email_provider: str = os.getenv("SAFAR_EMAIL_PROVIDER", "disabled").strip().lower()
+        if self.email_provider != "disabled":
+            raise RuntimeError(
+                "SAFAR_EMAIL_PROVIDER must be 'disabled'; no transactional email provider is wired."
+            )
         self.access_token_expire_minutes: int = int(
             os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
         )

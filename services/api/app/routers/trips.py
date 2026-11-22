@@ -66,6 +66,7 @@ from app.services.serializers import (
     trip_out,
 )
 from app.services import discovery as discovery_service
+from app.integrations import email as email_service
 
 router = APIRouter(
     prefix="/api/trips",
@@ -394,6 +395,20 @@ def create_invitation(
     db.commit()
     data = invitation_out(invitation, trip)
     data["path"] = f"/invite/{token}"
+    if invitation.email:
+        try:
+            message = email_service.build_invitation_email(
+                invitation.email, data["path"], invitation.expires_at
+            )
+            delivery = email_service.get_email_sender().send_invitation(message)
+            if not delivery.delivered:
+                email_service.email_logger.info(
+                    "invitation_email_not_sent", extra={"provider": delivery.provider}
+                )
+        except email_service.EmailValidationError:
+            email_service.email_logger.warning("invitation_email_validation_failed")
+        except Exception:
+            email_service.email_logger.exception("invitation_email_failed")
     return data
 
 

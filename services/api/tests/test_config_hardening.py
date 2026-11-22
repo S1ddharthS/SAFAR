@@ -123,6 +123,11 @@ def test_hosted_environments_reject_memory_media_backend(monkeypatch, environmen
         )
 
 
+def test_email_provider_must_remain_disabled(monkeypatch):
+    with pytest.raises(RuntimeError, match="SAFAR_EMAIL_PROVIDER"):
+        _settings(monkeypatch, SAFAR_EMAIL_PROVIDER="smtp")
+
+
 @pytest.mark.parametrize("environment", ["staging", "production"])
 @pytest.mark.parametrize("flag", ["SAFAR_SEED", "SAFAR_CREATE_SCHEMA"])
 def test_hosted_environments_reject_seed_or_schema_creation(monkeypatch, environment, flag):

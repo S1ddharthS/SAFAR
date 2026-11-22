@@ -1,0 +1,67 @@
+name: Staging preflight (manual)
+
+# Manual-only. This workflow validates that the repository and supplied staging
+# configuration are safe to deploy. It never authenticates to a cloud provider,
+# pushes an image, runs a migration against a managed database or deploys.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Configuration target
+        required: true
+        type: choice
+        options: [staging]
+        default: staging
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Reusable CI suite
+    uses: ./.github/workflows/ci.yml
+
+  config:
+    name: Redacted config validation
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/api/requirements.txt
+      - name: Install dependencies
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Validate hosted configuration
+        working-directory: services/api
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.STAGING_SECRET_KEY }}
+          CORS_ORIGINS: ${{ vars.STAGING_CORS_ORIGINS }}
+          TRUSTED_HOSTS: ${{ vars.STAGING_TRUSTED_HOSTS }}
+          COOKIE_SECURE: "true"
+          SAFAR_MEDIA_BACKEND: local
+          SAFAR_SEED: "false"
+          SAFAR_CREATE_SCHEMA: "false"
+        run: python scripts/check_config.py
+
+  images:
+    name: Docker build check (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build --tag safar-api:preflight services/api
+      - name: Build web image
+        run: >-
+          docker build
+          --file apps/web/Dockerfile
+          --build-arg NEXT_PUBLIC_API_URL=https://api.staging.invalid
+          --tag safar-web:preflight
+          apps/web

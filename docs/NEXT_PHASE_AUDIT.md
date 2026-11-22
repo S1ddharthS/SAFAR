@@ -106,8 +106,9 @@ Tool versions observed: Python 3.13.12 in `services/api\.venv` (global Python
 
 | Layer | Command | Workdir | Result |
 |---|---|---|---|
-| Backend | `.\.venv\Scripts\python.exe -m pytest tests -q` | `services/api` | **157 passed, 3 skipped, 1 warning in 23.81s** after the config-hardening work; **136 passed** after the adapter work; **129 passed** after the first P0 fix alone. Twenty-one new config tests and seven new adapter tests were added. |
-| Backend syntax | `.\.venv\Scripts\python.exe -m compileall -q scripts tests` | `services/api` | Clean. |
+| Backend | `.\.venv\Scripts\python.exe -m pytest tests -q` | `services/api` | **177 passed, 3 skipped, 1 warning in 22.80s** after the email-seam work; **158 passed** after CI/preflight; **157 passed** after config hardening; **136 passed** after the adapter work; **129 passed** after the first P0 fix alone. Eighteen email-seam tests and one additional config test were added. |
+| Backend syntax | `.\.venv\Scripts\python.exe -m compileall -q app tests scripts` | `services/api` | Clean. |
+| CI/templates | `python -c "import yaml,pathlib; ..."` over 5 new YAML files | `services/api` | `YAML OK: 5 files`; GitHub workflows and Cloud Run templates parse cleanly. |
 | Web | `npm test` | `apps/web` | **2 files passed, 12 tests passed**. |
 | Web | `npm run typecheck` | `apps/web` | Clean after `npm run build` regenerated `.next/types`. |
 | Web | `npm run build` | `apps/web` | Production build succeeded; **51 routes**. |
@@ -216,6 +217,56 @@ probes, but `testserver`, `10.0.2.2` and `*` are rejected in hosted
 environments. No cloud resource was contacted and no existing deployment was
 changed. These are startup guards only; they do not prove HTTPS, proxy header
 handling or hosted CORS behaviour without a real staging deployment.
+
+### Follow-up safe task: CI and staging templates (P14-03 groundwork)
+
+A fourth self-contained task added reproducible test automation and deployment
+templates without applying or executing any deployment.
+
+| File | Change |
+|---|---|
+| `.github/workflows/ci.yml` | Test-only CI: backend pytest, web Vitest/typecheck/build and Flutter analyze/test. Supports `workflow_call`, pull requests and pushes. No auth, registry, migration or deploy step. |
+| `.github/workflows/staging-preflight.yml` | Manual `workflow_dispatch` only. Reuses CI, validates hosted config in the GitHub `staging` environment, and builds both Docker images locally without pushing. |
+| `services/api/scripts/check_config.py` | Prints a redacted JSON config summary; never emits secret keys, DB credentials or cookies. |
+| `services/api/tests/test_check_config_cli.py` | Verifies the checker succeeds with hardened staging env and does not print secret markers. |
+| `deploy/staging/api-service.yaml` | Cloud Run API service template with readiness/liveness probes, secure cookies, explicit hosts/origins and Secret Manager references. |
+| `deploy/staging/web-service.yaml` | Cloud Run web service template; notes that `NEXT_PUBLIC_API_URL` is build-time only. |
+| `deploy/staging/migrate-job.yaml` | One-shot Alembic job template using a separate migration DB secret, never the RLS-restricted app role. |
+| `deploy/staging/README.md` | Placeholder list, required secrets/vars, manual owner-run outline and rollback guidance. |
+
+**No automatic deployment exists.** `ci.yml` only runs tests.
+`staging-preflight.yml` has a single manual trigger and no cloud
+authentication, image push, migration execution or service update. The three
+Cloud Run files are unrendered templates containing placeholders such as
+`PROJECT_ID`, `REGION`, `TAG` and `STAGING_DOMAIN`; they were parsed for YAML
+syntax only. No cloud project, registry, domain or secret store was contacted.
+
+### Follow-up safe task: provider-neutral invitation email seam (P14-06 groundwork)
+
+A fifth self-contained task added a safe email contract without wiring any
+provider or sending any message.
+
+| File | Change |
+|---|---|
+| `services/api/app/integrations/email.py` | New `InvitationEmail`/`EmailDelivery` contracts, strict recipient and relative-path validation, fixed generic copy, `NoopEmailSender`, test-only `InMemoryEmailSender`, fail-closed factory and capability status. |
+| `services/api/app/core/config.py` | Adds `SAFAR_EMAIL_PROVIDER`; any value other than `disabled` fails startup because no provider is wired. |
+| `services/api/app/routers/trips.py` | Invitation creation optionally calls the sender after commit, logs only a generic failure, and never changes the link-only API response. Failures do not roll back the invitation. |
+| `services/api/app/integrations/registry.py` | Reports outbound email as disabled with no network or key requirement. |
+| `services/api/scripts/check_config.py` | Includes the non-secret email provider in the redacted summary. |
+| `.env.example` | Documents that email stays disabled and links/share sheets are the fallback. |
+| `services/api/tests/test_email_seam.py` | Eighteen tests: minimal dataclass shape, generic copy, strict path/recipient validation, no network call, fail-closed providers, registry truthfulness, API write-through and no email for share-link invites. |
+| `services/api/tests/test_config_hardening.py` | Adds one test that rejects a non-disabled email provider. |
+
+The message carries only a validated recipient, a relative `/invite/{token}`
+path and an ISO expiry. There is no trip name, budget, note, location,
+accessibility need or member detail in the contract or rendered copy. Email
+validation uses `check_deliverability=False`, so even local invitation tests
+make no DNS query. `NoopEmailSender` is the runtime default; no SMTP, HTTP or
+cloud API call exists.
+
+This is **not** a deliverable email integration. SPF/DKIM/DMARC, provider
+selection, abuse controls, rate limits and a real deliverability report remain
+external gates. No message was sent.
 
 ---
 
@@ -370,20 +421,22 @@ rewrite the application.
    static-chat baseline, severe-blocker checklist, fairness/feasibility
    metrics and signed release decision. No public launch before gates pass.
 
-**Recommended commits after owner review (in order):**
+**Commit state at this checkpoint:** the earlier P0 fixes, storage-adapter
+seam and config-hardening changes were committed and pushed by the owner as
+`5efae48` on `udbhav`. The CI/preflight and email-seam files in this checkpoint
+are still uncommitted.
 
-1. `fix(P0): restore reproducible baseline and remove hardcoded staging credentials`
-   — P0 files listed in §4, both new audit documents, excluding the pre-existing
-   `package-lock.json` change unless the owner explicitly wants it included.
-2. `feat(storage): add private media store adapter seam`
-   — the adapter/config/router/admin changes and `test_media_store.py` listed in
-   the follow-up subsection of §4.
-3. `hardening: fail closed on hosted configuration defaults`
-   — the `config.py` / `.env.example` checks and `test_config_hardening.py`
-   listed in the hosted-configuration subsection of §4.
+**Recommended next commits (in order):**
 
-No cloud manifest, deployment action or persistent data migration is included
-in any of these commits.
+1. `ci: add test-only workflow and manual staging preflight templates`
+   — `.github/workflows`, `scripts/check_config.py`,
+   `test_check_config_cli.py` and unrendered `deploy/staging` templates.
+2. `feat(email): add provider-neutral invitation seam`
+   — `app/integrations/email.py`, the config/router/registry/script wiring,
+   `.env.example` and `test_email_seam.py`, plus the added config test.
+
+No cloud resource was provisioned, no deployment was applied, no email was
+sent and no persistent data migration is included in this work.
 
 ---
 

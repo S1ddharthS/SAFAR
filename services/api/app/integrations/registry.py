@@ -5,7 +5,7 @@ uses this to describe the assistant truthfully instead of claiming AI it does
 not have.
 """
 
-from app.integrations import base, links, ocr, weather
+from app.integrations import base, email, links, ocr, weather
 from app.services.language import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
 
 TRANSLATION_LANGUAGES = SUPPORTED_LANGUAGES
@@ -40,10 +40,7 @@ def capabilities() -> dict:
                     "Setting OPENAI_API_KEY does not enable it."
                 ),
             },
-            "email": {
-                "enabled": False,
-                "note": "Notifications are in-app only on this deployment.",
-            },
+            "email": email.status(),
             "storage": {
                 "enabled": True,
                 "mode": "signed-local-url",

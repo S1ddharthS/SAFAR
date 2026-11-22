@@ -30,9 +30,9 @@ Roles are placeholders: assign real names before sign-off.
 | Credential hygiene | Security owner | Exposed staging credentials rotated; history review recorded; no secret values in source/docs | Rotation ticket + scan output | **Blocked — owner action** |
 | PostgreSQL/RLS | DBA/security owner | `safar_app` non-owner role; 0 rows without identity; cross-trip isolation; policy count recorded | `verify_postgres_rls.py` output on disposable DB | **Blocked** |
 | Backup/PITR | DBA/infra owner | Managed backups + PITR enabled; restore drill timed | Restore report with RPO/RTO | **Blocked** |
-| Managed staging | Cloud/infra owner | Isolated HTTPS staging; exact CORS/Host/cookie settings; migrations as release step; rollback tested | Deploy log, probe results, rollback log | **Not started** |
+| Managed staging | Cloud/infra owner | Isolated HTTPS staging; exact CORS/Host/cookie settings; migrations as release step; rollback tested | Deploy log, probe results, rollback log | **Templates + manual preflight added; provisioning/deploy not started** |
 | Private media | Cloud/infra owner | Private bucket; expiring URLs; member/outsider/revocation/delete tests; migration rollback | Authorization matrix | **Adapter seam done; cloud backend not started** |
-| Invitation email | Product/security owner | SPF/DKIM/DMARC; expiry and rate limit; no private content; link fallback preserved | Provider report + abuse test | **Not started** |
+| Invitation email | Product/security owner | SPF/DKIM/DMARC; expiry and rate limit; no private content; link fallback preserved | Provider report + abuse test | **Minimal local seam done; provider/domain not started** |
 | Observability | Ops owner | Dashboards/alerts for 5xx, auth failures, refresh reuse, CSRF, slow queries, sync conflicts, readiness | Alert firing test; redaction scan | **Partial — code/tests only** |
 | Multi-node | Infra owner | Shared rate limits/pub-sub and WS reconnect/resync tests if >1 instance | Failure-injection report | **Deferred** |
 | Android release | Mobile owner | Production upload key + Play App Signing; internal track; deep links | Signed AAB + test report | **Blocked** |
@@ -50,7 +50,7 @@ Roles are placeholders: assign real names before sign-off.
 | Signed URL TTL too long for sensitive media | Medium | High | Review TTL per media class; test revocation limits explicitly |
 | In-process rate limits bypassed across instances | High if scaled | High | Stay one-node for pilot; add shared limiter before scale-out |
 | WebSocket drops on server timeout | Medium | Medium | Reconnect/backoff already in client; add resync proof before multi-node |
-| Invitation email leaks trip context | Low | High | Template contains link only; no budgets/notes/location; log redaction |
+| Invitation email leaks trip context | Low | High | Minimal allowlisted message contract; generic template; no budgets/notes/location; log redaction |
 | PITR target claimed without drill | Medium | High | Publish measured RPO/RTO only after restore test |
 | Throwaway Android signing key used for release | High if shipped | High | Production upload key and Play App Signing before internal track |
 | Heuristics presented as trained AI/live data | Medium | High | Keep deterministic labels; no external provider claims without evidence |

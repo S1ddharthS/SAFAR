@@ -1,0 +1,85 @@
+# TEMPLATE ONLY — not applied by CI. Replace PROJECT_ID, REGION, TAG and
+# SAFAR_STAGING_RUNTIME_SA before use. Secrets are references, never values.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: safar-api-staging
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: SAFAR_STAGING_RUNTIME_SA
+      containers:
+        - name: safar-api
+          image: REGION-docker.pkg.dev/PROJECT_ID/safar/safar-api:TAG
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENVIRONMENT
+              value: staging
+            - name: RELEASE
+              value: TAG
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: safar-staging-database-url
+                  key: latest
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: safar-staging-secret-key
+                  key: latest
+            - name: CORS_ORIGINS
+              value: https://web.STAGING_DOMAIN
+            - name: TRUSTED_HOSTS
+              value: api.STAGING_DOMAIN,localhost
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: COOKIE_SAMESITE
+              value: lax
+            - name: COOKIE_DOMAIN
+              value: .STAGING_DOMAIN
+            - name: TRUST_PROXY_HEADERS
+              value: "true"
+            - name: SAFAR_MEDIA_BACKEND
+              value: local
+            - name: SAFAR_STORAGE_DIR
+              value: /app/storage
+            - name: SAFAR_SEED
+              value: "false"
+            - name: SAFAR_CREATE_SCHEMA
+              value: "false"
+            - name: ENABLE_API_DOCS
+              value: "false"
+            - name: SAFAR_OCR_ENABLED
+              value: "false"
+            - name: SAFAR_WEATHER_PROVIDER
+              value: disabled
+            - name: SAFAR_LINK_FETCH_ENABLED
+              value: "false"
+            - name: LOG_LEVEL
+              value: INFO
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

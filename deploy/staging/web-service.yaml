@@ -1,0 +1,45 @@
+# TEMPLATE ONLY — not applied by CI. NEXT_PUBLIC_API_URL is baked into the
+# image at build time; it is intentionally not set at runtime here.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: safar-web-staging
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: SAFAR_STAGING_RUNTIME_SA
+      containers:
+        - name: safar-web
+          image: REGION-docker.pkg.dev/PROJECT_ID/safar/safar-web:TAG
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

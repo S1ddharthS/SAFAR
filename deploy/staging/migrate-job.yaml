@@ -1,0 +1,41 @@
+# TEMPLATE ONLY — not applied by CI. Run as a separate, owner-approved release
+# step before the API revision is promoted. Use a migration-capable DB role,
+# never the application's RLS-restricted runtime role.
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: safar-api-migrate-staging
+spec:
+  template:
+    spec:
+      serviceAccountName: SAFAR_STAGING_RUNTIME_SA
+      maxRetries: 0
+      containers:
+        - name: migrate
+          image: REGION-docker.pkg.dev/PROJECT_ID/safar/safar-api:TAG
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: ENVIRONMENT
+              value: staging
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: safar-staging-migration-database-url
+                  key: latest
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: safar-staging-secret-key
+                  key: latest
+            - name: SAFAR_SEED
+              value: "false"
+            - name: SAFAR_CREATE_SCHEMA
+              value: "false"
+            - name: SAFAR_MEDIA_BACKEND
+              value: local
+            - name: LOG_LEVEL
+              value: INFO
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
