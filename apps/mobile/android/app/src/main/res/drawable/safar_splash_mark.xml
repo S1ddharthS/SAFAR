@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch mark: ember sun and ring above a jade horizon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M35,50 A19,19 0 1 0 73,50 A19,19 0 1 0 35,50 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFB04A08"
+        android:strokeWidth="4" />
+    <path
+        android:pathData="M43,50 A11,11 0 1 0 65,50 A11,11 0 1 0 43,50 Z"
+        android:fillColor="#FFB04A08" />
+    <path
+        android:pathData="M33,77 H75"
+        android:strokeColor="#FF0A6E66"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+</vector>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SAFAR design tokens mirrored from lib/core/theme/safar_theme.dart. -->
+    <color name="safar_icon_background">#FFF6F1E7</color>
+    <color name="safar_splash_background">#FFF6F1E7</color>
+</resources>

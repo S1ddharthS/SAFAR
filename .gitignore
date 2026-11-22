@@ -1,0 +1,72 @@
+# Dependencies & Package Managers
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.dart_tool/
+.flutter-plugins-dependencies
+.flutter-plugins
+.pub-cache/
+.pub/
+
+# Builds & Outputs
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+apps/mobile/build/
+android/app/build/
+android/.gradle/
+
+# Runtime Data & Local Databases
+*.db
+*.db-journal
+*.sqlite3
+
+# Media & Storage Volumes (Development, Staging & Production)
+storage/
+storage_staging/
+services/api/storage/
+services/api/storage_staging/
+vibe_images/
+
+# Environment Files & Secrets
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+*.env
+services/api/.env
+apps/web/.env.local
+
+# Signing Credentials & Keystores
+local.properties
+key.properties
+*.jks
+*.keystore
+
+# Backups & Database Dumps
+*.dump
+backup_manifest.json
+backups/
+tools/
+
+# Logs & Temporary Workspaces
+*.log
+migrate_working_dir/
+
+# Editor / Operating System
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Test Coverage
+coverage/
+htmlcov/
