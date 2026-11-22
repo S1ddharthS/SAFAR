@@ -1,8 +1,6 @@
 """SAFAR API entrypoint."""
 
-import re
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +17,11 @@ from app.db.session import Base, SessionLocal, check_db_readiness, engine
 from app.services.assistant import GENERATOR as ASSISTANT_VERSION
 from app.services.engine import ENGINE_VERSION
 from app.services.media import verify_media_request
+from app.services.media_store import (
+    MediaValidationError,
+    get_media_store,
+    parse_media_key,
+)
 from app.routers import (
     admin,
     assistant,
@@ -49,7 +52,7 @@ async def lifespan(app: FastAPI):
     # run `alembic upgrade head` first so schema changes are versioned.
     if settings.create_schema:
         Base.metadata.create_all(bind=engine)
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    get_media_store().ensure_ready()
     if settings.auto_seed:
         from app.db.context import system_context
         from app.seed import seed_if_needed
@@ -119,21 +122,20 @@ app.include_router(companion.public_router)
 app.include_router(opportunity.router)
 app.include_router(ws.router)
 
-MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-TRIP_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
-MEDIA_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+get_media_store().ensure_ready()
 
 
 @app.get("/media/{trip_id}/{filename}")
 def media_file(trip_id: str, filename: str, request: Request):
     """Serve trip media only with an unexpired HMAC signature."""
-    if not TRIP_ID_PATTERN.match(trip_id) or not MEDIA_NAME_PATTERN.match(filename):
+    try:
+        key = parse_media_key(trip_id, filename)
+    except MediaValidationError:
         raise HTTPException(status_code=404, detail="Media not found")
-    path = f"/media/{trip_id}/{filename}"
-    if not verify_media_request(path, dict(request.query_params)):
+    if not verify_media_request(key.path, dict(request.query_params)):
         raise HTTPException(status_code=403, detail="Media link is missing or expired")
-    candidate = (MEDIA_DIR / trip_id / filename).resolve()
-    if MEDIA_DIR.resolve() not in candidate.parents or not candidate.is_file():
+    candidate = get_media_store().local_path(trip_id, filename)
+    if candidate is None:
         raise HTTPException(status_code=404, detail="Media not found")
     return FileResponse(candidate)
 

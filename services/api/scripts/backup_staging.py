@@ -24,29 +24,102 @@ logging.basicConfig(
 )
 logger = logging.getLogger("safar.backup")
 
-TOOLS_BIN = Path("C:/Users/siddharth/Desktop/SAFAR/tools/pgsql/bin")
-DEFAULT_BACKUP_DIR = Path("C:/Users/siddharth/Desktop/SAFAR/storage_staging/backups")
+# Deployment-specific locations and credentials come from the environment.
+# Repository-relative defaults keep local development portable; no absolute
+# developer paths or secrets belong in source control.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+TOOLS_BIN = Path(
+    os.environ.get("SAFAR_PG_BIN", str(_REPO_ROOT / "tools" / "pgsql" / "bin"))
+)
+DEFAULT_BACKUP_DIR = Path(
+    os.environ.get(
+        "SAFAR_BACKUP_DIR", str(_REPO_ROOT / "storage_staging" / "backups")
+    )
+)
 MANIFEST_FILE = DEFAULT_BACKUP_DIR / "backup_manifest.json"
 
 
+def _load_staging_env() -> dict[str, str]:
+    """Read an optional env file. Values are never logged."""
+    configured = os.environ.get("SAFAR_ENV_FILE")
+    path = Path(configured) if configured else (_REPO_ROOT / ".env.staging")
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
 def get_db_credentials() -> dict[str, str]:
-    """Reads connection parameters from .env.staging or environment."""
-    staging_env = Path("C:/Users/siddharth/Desktop/SAFAR/.env.staging")
-    content = ""
-    if staging_env.exists():
-        content = staging_env.read_text(encoding="utf-8")
+    """Resolve staging database parameters from environment or SAFAR_ENV_FILE.
 
-    # Use pooler for reliable IPv4 transport on port 5432
-    host = "aws-0-ap-south-1.pooler.supabase.com"
-    port = "5432"
-    user = "postgres.qekbbbkmhpvdktctfgow"
-    password = "safarisatravellingapp"
-    source_db = "postgres"
-    safar_app_pwd = "safar_app_sec_d09eb115a3ef5fcdc84dcdebec069668"
+    Environment variables take precedence over the env file. Set either a full
+    ``SAFAR_STAGING_DATABASE_URL`` (admin connection, e.g. Supabase IPv4 pooler)
+    or the individual ``SAFAR_STAGING_DB_*`` variables. The restricted
+    application role password must be supplied as ``SAFAR_APP_DB_PASSWORD``.
+    """
+    env_file = _load_staging_env()
+    database_url = (
+        os.environ.get("SAFAR_STAGING_DATABASE_URL")
+        or env_file.get("SAFAR_STAGING_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+        or env_file.get("DATABASE_URL")
+        or ""
+    )
+    parsed: dict[str, str] = {}
+    if database_url:
+        match = re.search(
+            r"postgresql(?:\+psycopg)?://([^:/@]+):([^@]+)@([^:/]+)(?::(\d+))?/([^?\s]+)",
+            database_url,
+        )
+        if match:
+            parsed = {
+                "user": match.group(1),
+                "password": match.group(2),
+                "host": match.group(3),
+                "port": match.group(4) or "5432",
+                "source_db": match.group(5),
+            }
 
-    m = re.search(r"DATABASE_URL=postgresql\+psycopg://safar_app(?:\.qekbbbkmhpvdktctfgow)?:([^@]+)@", content)
-    if m:
-        safar_app_pwd = m.group(1)
+    def pick(name: str, key: str, default: str = "") -> str:
+        return os.environ.get(name) or env_file.get(name) or parsed.get(key, default)
+
+    host = pick("SAFAR_STAGING_DB_HOST", "host")
+    port = pick("SAFAR_STAGING_DB_PORT", "port", "5432")
+    user = pick("SAFAR_STAGING_DB_USER", "user")
+    password = pick("SAFAR_STAGING_DB_PASSWORD", "password")
+    source_db = pick("SAFAR_STAGING_DB_NAME", "source_db", "postgres")
+    safar_app_pwd = os.environ.get("SAFAR_APP_DB_PASSWORD") or env_file.get(
+        "SAFAR_APP_DB_PASSWORD", ""
+    )
+    project_ref = user.split(".", 1)[1] if "." in user else ""
+    app_user = os.environ.get("SAFAR_APP_DB_USER") or (
+        f"safar_app.{project_ref}" if project_ref and "pooler" in host else "safar_app"
+    )
+
+    missing = [
+        name
+        for name, value in {
+            "host": host,
+            "user": user,
+            "password": password,
+            "SAFAR_APP_DB_PASSWORD": safar_app_pwd,
+        }.items()
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Staging backup configuration is incomplete: "
+            + ", ".join(missing)
+            + ". Set SAFAR_STAGING_DB_HOST/USER/PASSWORD and "
+            "SAFAR_APP_DB_PASSWORD, or provide a full "
+            "SAFAR_STAGING_DATABASE_URL in SAFAR_ENV_FILE."
+        )
 
     return {
         "host": host,
@@ -55,6 +128,7 @@ def get_db_credentials() -> dict[str, str]:
         "password": password,
         "source_db": source_db,
         "safar_app_pwd": safar_app_pwd,
+        "safar_app_user": app_user,
     }
 
 
@@ -304,7 +378,7 @@ def verify_restore(dump_path: Path) -> dict[str, Any]:
                 cur.execute("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO safar_app;")
 
         # Test isolation as safar_app
-        app_user = "safar_app.qekbbbkmhpvdktctfgow" if "pooler" in creds["host"] else "safar_app"
+        app_user = creds["safar_app_user"]
         app_verify_conn = f"postgresql://{app_user}:{creds['safar_app_pwd']}@{creds['host']}:{creds['port']}/{target_db}?sslmode=require"
         with psycopg.connect(app_verify_conn) as conn:
             with conn.cursor() as cur:

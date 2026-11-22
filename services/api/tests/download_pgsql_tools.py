@@ -6,7 +6,9 @@ import urllib.request
 from pathlib import Path
 
 def main():
-    tools_dir = Path("C:/Users/siddharth/Desktop/SAFAR/tools/pgsql")
+    # SAFAR_PG_BIN overrides the repository-local tools directory.
+    tools_bin = Path(os.environ.get("SAFAR_PG_BIN", str(Path(__file__).resolve().parents[3] / "tools" / "pgsql" / "bin")))
+    tools_dir = tools_bin.parent
     tools_dir.mkdir(parents=True, exist_ok=True)
     zip_path = tools_dir / "pgsql_binaries.zip"
 

@@ -6,25 +6,35 @@ import subprocess
 from pathlib import Path
 import psycopg
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.backup_staging import (
+    DEFAULT_BACKUP_DIR,
+    TOOLS_BIN,
+    get_db_credentials,
+)
+
 def main():
     print("--- TASK 2: FULL POSTGRESQL PG_DUMP & PG_RESTORE DRILL ---")
 
-    tools_bin = Path("C:/Users/siddharth/Desktop/SAFAR/tools/pgsql/bin")
+    tools_bin = TOOLS_BIN
     pg_dump_exe = tools_bin / "pg_dump.exe"
     pg_restore_exe = tools_bin / "pg_restore.exe"
 
-    assert pg_dump_exe.exists(), f"pg_dump not found at {pg_dump_exe}"
-    assert pg_restore_exe.exists(), f"pg_restore not found at {pg_restore_exe}"
+    if not pg_dump_exe.exists():
+        pg_dump_exe = Path("pg_dump")
+    if not pg_restore_exe.exists():
+        pg_restore_exe = Path("pg_restore")
 
-    # Supabase connection parameters
-    host = "db.qekbbbkmhpvdktctfgow.supabase.co"
-    port = "5432"
-    user = "postgres"
-    password = "safarisatravellingapp"
-    source_db = "postgres"
+    creds = get_db_credentials()
+    host = creds["host"]
+    port = creds["port"]
+    user = creds["user"]
+    password = creds["password"]
+    source_db = creds["source_db"]
     target_db = "safar_restore_verify"
 
-    dump_file = Path("C:/Users/siddharth/Desktop/SAFAR/storage_staging/safar_full_backup.dump")
+    dump_file = DEFAULT_BACKUP_DIR / "safar_full_backup.dump"
     dump_file.parent.mkdir(parents=True, exist_ok=True)
     if dump_file.exists():
         dump_file.unlink()
@@ -130,16 +140,11 @@ def main():
                 cur.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO safar_app;")
                 cur.execute("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO safar_app;")
 
-        # Test isolation as safar_app
-        from app.core.config import settings
-        # Read safar_app password from .env.staging
-        import re
-        with open("C:/Users/siddharth/Desktop/SAFAR/.env.staging", "r") as f:
-            content = f.read()
-        m = re.search(r"DATABASE_URL=postgresql\+psycopg://safar_app:([^@]+)@", content)
-        safar_app_pwd = m.group(1)
-
-        app_verify_conn = f"postgresql://safar_app:{safar_app_pwd}@{host}:{port}/{target_db}?sslmode=require"
+        # Test isolation as the restricted application role.
+        app_verify_conn = (
+            f"postgresql://{creds['safar_app_user']}:{creds['safar_app_pwd']}@"
+            f"{host}:{port}/{target_db}?sslmode=require"
+        )
         with psycopg.connect(app_verify_conn) as conn:
             with conn.cursor() as cur:
                 # Anonymous query

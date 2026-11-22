@@ -6,7 +6,6 @@ are presented as verified facts.
 """
 
 import json
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -14,8 +13,6 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
-from app.core.config import settings
 
 from app.core.deps import (
     get_current_user,
@@ -65,6 +62,7 @@ from app.services.common import audit, notify_trip_members
 from app.services.feedback import apply_feedback_to_dna, upsert_activity_feedback
 from app.services.geo import haversine_km, travel_minutes
 from app.services.media import verify_media_request
+from app.services.media_store import MediaValidationError, get_media_store, parse_media_url
 from app.services.serializers import (
     activity_out,
     destination_out,
@@ -78,9 +76,6 @@ router = APIRouter(
     tags=["discovery"],
     dependencies=[Depends(trip_scope_guard)],
 )
-MEDIA_ROOT = settings.storage_dir
-_MEDIA_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
-
 
 def _trip(db, trip_id, user, roles=None):
     return get_trip_and_member(trip_id, db, user, roles)
@@ -579,23 +574,21 @@ def list_inspirations(
 
 
 def _media_path_for_trip(trip: Trip, media_url: str | None) -> Path | None:
-    """Resolve a signed local media URL to a file inside this trip's folder."""
+    """Resolve a signed local media URL through the configured store."""
     if not media_url:
         return None
     parts = urlsplit(media_url)
     if parts.scheme or parts.netloc:
         raise HTTPException(status_code=422, detail="Media must be a local SAFAR upload")
-    prefix = f"/media/{trip.id}/"
-    if not parts.path.startswith(prefix):
-        raise HTTPException(status_code=422, detail="Media does not belong to this trip")
-    filename = parts.path[len(prefix):]
-    if not _MEDIA_NAME_PATTERN.match(filename):
-        raise HTTPException(status_code=422, detail="Invalid media name")
-    query = {key: values[0] for key, values in parse_qs(parts.query).items()}
-    if not verify_media_request(parts.path, query):
+    try:
+        key = parse_media_url(media_url, expected_trip_id=trip.id)
+    except MediaValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    query = {key_: values[0] for key_, values in parse_qs(parts.query).items()}
+    if not verify_media_request(key.path, query):
         raise HTTPException(status_code=403, detail="Media link is missing or expired")
-    candidate = (MEDIA_ROOT / trip.id / filename).resolve()
-    if MEDIA_ROOT.resolve() not in candidate.parents or not candidate.is_file():
+    candidate = get_media_store().local_path(key.trip_id, key.filename)
+    if candidate is None:
         raise HTTPException(status_code=404, detail="Media not found")
     return candidate
 

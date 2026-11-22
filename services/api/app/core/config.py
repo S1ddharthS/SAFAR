@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -30,14 +31,26 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+RESTRICTED_ENVIRONMENTS = {"production", "staging"}
+# Localhost is permitted for in-container probe requests. Test/emulator hosts
+# and wildcard allowlists must never reach a hosted deployment.
+FORBIDDEN_HOSTS = {"*", "testserver", "10.0.2.2"}
+
+
 class Settings:
     def __init__(self) -> None:
         default_db = f"sqlite:///{(API_DIR / 'safar.db').as_posix()}"
         self.database_url: str = os.getenv("DATABASE_URL", default_db)
         self.environment: str = os.getenv("ENVIRONMENT", "development")
+        restricted = self.environment in RESTRICTED_ENVIRONMENTS
+        if restricted and not self.database_url.startswith("postgresql+psycopg://"):
+            raise RuntimeError(
+                "DATABASE_URL must use postgresql+psycopg:// in production/staging; "
+                "SQLite and other drivers are not supported there."
+            )
         default_secret = "safar-dev-secret-change-me-in-production"
         self.secret_key: str = os.getenv("SECRET_KEY", default_secret)
-        if self.environment in {"production", "staging"} and (
+        if restricted and (
             self.secret_key == default_secret or len(self.secret_key) < 32
         ):
             raise RuntimeError(
@@ -49,13 +62,26 @@ class Settings:
             self.storage_dir: Path = p if p.is_absolute() else (REPO_ROOT / p).resolve()
         else:
             self.storage_dir = API_DIR / "storage"
+        self.media_backend: str = os.getenv("SAFAR_MEDIA_BACKEND", "local").strip().lower()
+        if self.media_backend not in {"local", "memory"}:
+            raise RuntimeError(
+                "SAFAR_MEDIA_BACKEND must be 'local' or 'memory'; cloud adapters are not enabled."
+            )
+        if restricted and self.media_backend == "memory":
+            raise RuntimeError(
+                "SAFAR_MEDIA_BACKEND=memory is not allowed in production/staging"
+            )
         self.access_token_expire_minutes: int = int(
             os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
         )
         self.refresh_token_expire_days: int = int(
             os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30")
         )
-        self.cookie_secure: bool = _bool("COOKIE_SECURE", self.environment == "production")
+        self.cookie_secure: bool = _bool("COOKIE_SECURE", restricted)
+        if restricted and not self.cookie_secure:
+            raise RuntimeError(
+                "COOKIE_SECURE must be true in production/staging; hosted deployments require HTTPS."
+            )
         self.cookie_samesite: str = os.getenv("COOKIE_SAMESITE", "lax").strip().lower()
         if self.cookie_samesite not in {"lax", "strict", "none"}:
             raise RuntimeError("COOKIE_SAMESITE must be one of: lax, strict, none")
@@ -75,6 +101,15 @@ class Settings:
             ).split(",")
             if host.strip()
         ]
+        if restricted:
+            if not self.trusted_hosts:
+                raise RuntimeError("TRUSTED_HOSTS must not be empty in production/staging")
+            forbidden = sorted(set(self.trusted_hosts) & FORBIDDEN_HOSTS)
+            if forbidden:
+                raise RuntimeError(
+                    "TRUSTED_HOSTS contains development-only values in production/staging: "
+                    + ", ".join(forbidden)
+                )
         self.max_request_bytes: int = int(os.getenv("MAX_REQUEST_BYTES", "26214400"))
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
         self.release: str = os.getenv("RELEASE", "safar-1.0.0")
@@ -82,9 +117,7 @@ class Settings:
         self.slow_query_threshold_ms: float = float(os.getenv("SLOW_QUERY_THRESHOLD_MS", "500.0"))
         self.alert_webhook_url: str | None = os.getenv("ALERT_WEBHOOK_URL") or None
         self.trust_proxy_headers: bool = _bool("TRUST_PROXY_HEADERS", False)
-        self.api_docs_enabled: bool = _bool(
-            "ENABLE_API_DOCS", self.environment != "production"
-        )
+        self.api_docs_enabled: bool = _bool("ENABLE_API_DOCS", not restricted)
         self.auth_rate_limit_per_minute: int = int(
             os.getenv("AUTH_RATE_LIMIT_PER_MINUTE", "10")
         )
@@ -96,11 +129,24 @@ class Settings:
         )
         origins = os.getenv("CORS_ORIGINS", "http://localhost:3000")
         self.cors_origins = [o.strip() for o in origins.split(",") if o.strip()]
-        if self.environment in {"production", "staging"} and "*" in self.cors_origins:
-            raise RuntimeError(
-                "CORS_ORIGINS must list explicit origins in production/staging; '*' is not allowed "
-                "because cookie authentication requires credentials."
-            )
+        if restricted:
+            if not self.cors_origins or "*" in self.cors_origins:
+                raise RuntimeError(
+                    "CORS_ORIGINS must list explicit origins in production/staging; '*' is not allowed "
+                    "because cookie authentication requires credentials."
+                )
+            for origin in self.cors_origins:
+                parts = urlsplit(origin)
+                if (
+                    parts.scheme not in {"http", "https"}
+                    or not parts.netloc
+                    or parts.path not in {"", "/"}
+                    or parts.query
+                    or parts.fragment
+                ):
+                    raise RuntimeError(
+                        "CORS_ORIGINS entries must be bare http(s) origins without paths or wildcards."
+                    )
         # The OpenAI settings are intentionally inert. No service reads them;
         # wiring an LLM requires a separate change and explicit approval.
         self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY") or None
@@ -134,8 +180,13 @@ class Settings:
         self.ocr_max_image_bytes: int = int(
             os.getenv("SAFAR_OCR_MAX_IMAGE_BYTES", "10485760")
         )
-        self.auto_seed: bool = _bool("SAFAR_SEED", self.environment not in {"production", "staging"})
-        self.create_schema: bool = _bool("SAFAR_CREATE_SCHEMA", self.environment not in {"production", "staging"})
+        self.auto_seed: bool = _bool("SAFAR_SEED", not restricted)
+        self.create_schema: bool = _bool("SAFAR_CREATE_SCHEMA", not restricted)
+        if restricted and (self.auto_seed or self.create_schema):
+            raise RuntimeError(
+                "SAFAR_SEED and SAFAR_CREATE_SCHEMA must be false in production/staging; "
+                "run alembic upgrade head as a separate release step."
+            )
         self.rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "240"))
         self.retention_session_days: int = int(os.getenv("RETENTION_SESSION_DAYS", "30"))
         self.retention_invitation_days: int = int(os.getenv("RETENTION_INVITATION_DAYS", "30"))

@@ -17,7 +17,6 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.alerting import AlertCategory, AlertSeverity, alert_manager
-from app.core.config import settings
 from app.core.metrics import metrics
 
 media_logger = logging.getLogger("safar.media")
@@ -51,6 +50,7 @@ from app.schemas.schemas import (
 from app.services import memory as memory_service
 from app.services.common import audit, notify_trip_members
 from app.services.media import canonical_media_url, media_matches_type, sign_media_url
+from app.services.media_store import MediaTooLargeError, get_media_store
 from app.services.serializers import memory_out
 
 router = APIRouter(
@@ -60,7 +60,6 @@ router = APIRouter(
 )
 
 ADMIN_ROLES = {"owner", "admin"}
-MEDIA_ROOT = settings.storage_dir
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_MEDIA = {
     "image/jpeg": ".jpg",
@@ -302,11 +301,7 @@ async def upload_media(
             status_code=415,
             detail="Supported media: JPEG, PNG, WebP, MP4, WebM audio, MP3, OGG, WAV.",
         )
-    target_dir = MEDIA_ROOT / trip.id
-    target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{suffix}"
-    path = target_dir / filename
-    size = 0
     head = await file.read(64)
     if not media_matches_type(file.content_type, head):
         metrics.record_media_upload("rejected_mime")
@@ -315,18 +310,23 @@ async def upload_media(
             status_code=415,
             detail="The uploaded file does not match its declared media type.",
         )
-    with path.open("wb") as handle:
-        chunk = head
-        while chunk:
-            size += len(chunk)
-            if size > MAX_UPLOAD_BYTES:
-                handle.close()
-                path.unlink(missing_ok=True)
-                metrics.record_media_upload("rejected_size")
-                media_logger.warning("media_upload_rejected_size", extra={"size": size, "trip_id": trip.id})
-                raise HTTPException(status_code=413, detail="Media files are limited to 25 MB.")
-            handle.write(chunk)
+
+    async def chunks():
+        yield head
+        while True:
             chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            yield chunk
+
+    try:
+        size = await get_media_store().save(
+            trip.id, filename, chunks(), MAX_UPLOAD_BYTES
+        )
+    except MediaTooLargeError:
+        metrics.record_media_upload("rejected_size")
+        media_logger.warning("media_upload_rejected_size", extra={"trip_id": trip.id})
+        raise HTTPException(status_code=413, detail="Media files are limited to 25 MB.")
     metrics.record_media_upload("success")
     media_logger.info("media_upload_success", extra={"trip_id": trip.id, "media_type": file.content_type, "bytes": size})
     audit(

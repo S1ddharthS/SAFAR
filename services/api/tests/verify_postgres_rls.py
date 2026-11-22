@@ -1,28 +1,27 @@
 import os
 import secrets
+import sys
 from datetime import date
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 import psycopg
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.core.config import settings
 from app.db.context import set_user_context, system_context
 from app.models.models import Trip, TripMember, User
+from scripts.backup_staging import get_db_credentials
 
 def main():
-    import re
-    from pathlib import Path
-
-    staging_env = Path("C:/Users/siddharth/Desktop/SAFAR/.env.staging")
-    app_pwd = "safar_app_sec_d09eb115a3ef5fcdc84dcdebec069668"
-    if staging_env.exists():
-        content = staging_env.read_text(encoding="utf-8")
-        m = re.search(r"DATABASE_URL=postgresql\+psycopg://safar_app:([^@]+)@", content)
-        if m:
-            app_pwd = m.group(1)
-
-    admin_conn_str = "postgresql://postgres.qekbbbkmhpvdktctfgow:safarisatravellingapp@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    creds = get_db_credentials()
+    app_pwd = creds["safar_app_pwd"]
+    admin_conn_str = (
+        f"postgresql://{creds['user']}:{creds['password']}@{creds['host']}:"
+        f"{creds['port']}/{creds['source_db']}?sslmode=require"
+    )
 
     # 1. Admin setup: ensure non-owner safar_app role exists and has permissions
     with psycopg.connect(admin_conn_str) as conn:
@@ -40,7 +39,10 @@ def main():
             print("1. safar_app non-owner role configured with NOBYPASSRLS.")
 
     # 2. Configure SQLAlchemy engine connected strictly as non-owner safar_app
-    app_db_url = f"postgresql+psycopg://safar_app.qekbbbkmhpvdktctfgow:{app_pwd}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    app_db_url = (
+        f"postgresql+psycopg://{creds['safar_app_user']}:{app_pwd}@"
+        f"{creds['host']}:{creds['port']}/{creds['source_db']}?sslmode=require"
+    )
 
     app_engine = create_engine(app_db_url, pool_pre_ping=True)
     AppSession = sessionmaker(bind=app_engine, autocommit=False, autoflush=False)

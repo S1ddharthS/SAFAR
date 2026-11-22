@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import socket
 import tempfile
@@ -20,7 +21,7 @@ import pytest
 
 from app.core.metrics import MetricsCollector
 from app.core.alerting import AlertManager, AlertCategory, AlertSeverity
-from scripts.backup_staging import verify_manifest_integrity
+from scripts.backup_staging import MANIFEST_FILE, verify_manifest_integrity
 
 
 class TestMetricsPersistence:
@@ -93,9 +94,18 @@ class TestMetricsPersistence:
         assert new_snap["uptime_seconds"] < 1.0
 
     def test_file_backed_data_survives_process_restart(self):
-        """Verifies that backup history manifests and media storage survive restarts."""
-        manifest_file = Path("C:/Users/siddharth/Desktop/SAFAR/storage_staging/backups/backup_manifest.json")
-        assert manifest_file.exists(), "backup_manifest.json must exist persistently on disk"
+        """Verifies that a configured staging backup manifest survives restarts.
+
+        Environment-dependent check: it runs only where a staging backup has
+        actually been created (``SAFAR_BACKUP_DIR``). Portable test runs skip
+        with an explicit reason instead of failing on a developer machine.
+        """
+        manifest_file = MANIFEST_FILE
+        if not manifest_file.exists():
+            pytest.skip(
+                f"No staging backup manifest at {manifest_file}; "
+                "set SAFAR_BACKUP_DIR and run scripts/backup_staging.py to enable this check"
+            )
 
         manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
         assert "backups" in manifest_data
@@ -183,6 +193,11 @@ class TestBackupRetentionAndIntegrity:
 
     def test_live_staging_manifest_integrity_preserved(self):
         """Verifies the live staging backup without modifying or deleting any file."""
+        if not MANIFEST_FILE.exists():
+            pytest.skip(
+                f"No staging backup manifest at {MANIFEST_FILE}; "
+                "set SAFAR_BACKUP_DIR and run scripts/backup_staging.py to enable this check"
+            )
         report = verify_manifest_integrity()
         assert report["valid"] is True, f"Manifest integrity failed: {report.get('errors')}"
         assert report["successful_verified"] >= 1
@@ -280,7 +295,18 @@ class TestServerIsolation:
     """Verifies listening ports and confirms development vs staging process separation."""
 
     def test_listening_ports_and_process_separation(self):
-        """Verifies actual port status and distinguishes dev from staging."""
+        """Verifies actual port status and distinguishes dev from staging.
+
+        Opt-in with ``SAFAR_REQUIRE_RUNNING_SERVICES=1`` on the machine that
+        runs the documented dev/staging daemons; CI without those services
+        skips rather than reporting a false product regression.
+        """
+        if os.environ.get("SAFAR_REQUIRE_RUNNING_SERVICES") != "1":
+            pytest.skip(
+                "Running dev/staging daemons are not assumed; "
+                "set SAFAR_REQUIRE_RUNNING_SERVICES=1 on the staging host"
+            )
+
         def is_port_listening(port: int, host: str = "127.0.0.1") -> bool:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(1.0)

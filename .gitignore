@@ -26,11 +26,14 @@ android/.gradle/
 *.sqlite3
 
 # Media & Storage Volumes (Development, Staging & Production)
-storage/
-storage_staging/
-services/api/storage/
-services/api/storage_staging/
+# Anchored so a source directory named `storage` (the Flutter storage layer)
+# is not mistaken for runtime media.
+/storage/
+/storage_staging/
+/services/api/storage/
+/services/api/storage_staging/
 vibe_images/
+!apps/mobile/lib/core/storage/
 
 # Environment Files & Secrets
 .env

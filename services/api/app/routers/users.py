@@ -1,5 +1,4 @@
 from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -47,11 +46,11 @@ from app.schemas.schemas import (
     UserSettingsUpdate,
 )
 from app.services.common import DNA_DIMENSIONS, audit, clamp, default_dna, normalize_tag
+from app.services.media_store import MediaValidationError, get_media_store, parse_media_url
 from app.services.serializers import profile_out, user_out
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-MEDIA_ROOT = settings.storage_dir
 
 CONSENT_KINDS = {"terms", "personalization", "analytics", "location", "marketing"}
 
@@ -473,11 +472,15 @@ def delete_account(
     ).update({CompanionLink.revoked_at: now}, synchronize_session=False)
 
     # Shared memories lose their content, location and stored media files.
+    media_store = get_media_store()
     for memory in db.query(TripMemory).filter(TripMemory.user_id == user.id).all():
-        if memory.media_url and memory.media_url.startswith("/media/"):
-            target = (MEDIA_ROOT / memory.media_url[len("/media/"):]).resolve()
-            if MEDIA_ROOT.resolve() in target.parents:
-                target.unlink(missing_ok=True)
+        if memory.media_url:
+            try:
+                key = parse_media_url(memory.media_url)
+            except MediaValidationError:
+                key = None
+            if key:
+                media_store.delete(key.trip_id, key.filename)
         memory.text_content = None
         memory.caption = None
         memory.media_url = None

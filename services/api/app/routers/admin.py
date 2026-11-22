@@ -34,6 +34,7 @@ from app.models import (
 from app.models.models import utcnow
 from app.schemas.schemas import AbuseDecisionIn, MaterialWatchIn
 from app.services.common import audit, notify_trip_members
+from app.services.media_store import get_media_store
 
 router = APIRouter(prefix="/api", tags=["admin"])
 ADMIN_ROLES = {"owner", "admin"}
@@ -423,18 +424,9 @@ def get_operational_metrics(user: User = Depends(require_admin)):
     db_check = check_db_readiness()
     snapshot = metrics.snapshot()
 
-    # Safe inspection of storage directory
+    # Storage statistics come from the configured adapter.
+    media_stats = get_media_store().stats()
     media_dir = settings.storage_dir
-    total_media_files = 0
-    total_media_bytes = 0
-    if media_dir.exists():
-        try:
-            for item in media_dir.rglob("*"):
-                if item.is_file():
-                    total_media_files += 1
-                    total_media_bytes += item.stat().st_size
-        except Exception:
-            pass
 
     # Read latest backup record if manifest exists
     backup_info = None
@@ -466,9 +458,10 @@ def get_operational_metrics(user: User = Depends(require_admin)):
             "total_recent": len(alert_manager.get_recent_alerts()),
         },
         "media_storage": {
-            "storage_dir": media_dir.name,
-            "total_files": total_media_files,
-            "total_bytes": total_media_bytes,
+            "backend": media_stats.backend,
+            "storage_dir": media_stats.storage_dir,
+            "total_files": media_stats.total_files,
+            "total_bytes": media_stats.total_bytes,
         },
         "backup": backup_info or {"status": "none_recorded"},
     }
