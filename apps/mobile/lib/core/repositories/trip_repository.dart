@@ -29,6 +29,7 @@ class TripRepository {
     int groupSize = 4,
     double? budgetTotal,
     String currency = 'EUR',
+    String tripType = 'group',
   }) async => Trip.fromJson(
     jsonMap(
       await _api.post(
@@ -44,6 +45,7 @@ class TripRepository {
           'group_size': groupSize,
           'budget_total': ?budgetTotal,
           'currency': currency,
+          'trip_type': tripType,
         },
       ),
     ),

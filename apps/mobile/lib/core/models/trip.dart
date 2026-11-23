@@ -43,6 +43,7 @@ class Trip {
     this.description,
     this.destinationId,
     this.budgetTotal,
+    this.tripType = 'group',
     this.memberCount = 0,
     this.myRole = 'member',
     this.createdAt,
@@ -64,6 +65,7 @@ class Trip {
   final String? description;
   final String? destinationId;
   final double? budgetTotal;
+  final String tripType;
   final int memberCount;
   final String myRole;
   final String? createdAt;
@@ -71,6 +73,8 @@ class Trip {
 
   bool get isOwner => myRole == 'owner';
   bool get canManage => myRole == 'owner' || myRole == 'admin';
+  bool get isSolo => tripType == 'solo' || groupSize == 1;
+  bool get isGroup => !isSolo;
 
   String get dateRangeLabel {
     final start = shortDate(startDate);
@@ -116,6 +120,7 @@ class Trip {
       description: jsonString(json['description']),
       destinationId: jsonString(json['destination_id']),
       budgetTotal: jsonDoubleOrNull(json['budget_total']),
+      tripType: jsonText(json['trip_type'], 'group'),
       memberCount: jsonInt(json['member_count'], 1),
       myRole: jsonText(json['my_role'], 'member'),
       createdAt: jsonString(json['created_at']),

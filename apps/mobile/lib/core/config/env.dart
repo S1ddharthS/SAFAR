@@ -14,12 +14,13 @@ class Env {
       return raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
     }
     if (kDebugMode) {
-      // The Android emulator reaches the host machine through 10.0.2.2;
-      // localhost there would be the emulator itself.
+      // Port 8020 is the active SAFAR staging server.
+      // Physical Android devices using `adb reverse tcp:8020 tcp:8020` (and ADB loopback)
+      // connect to 127.0.0.1:8020.
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        return 'http://10.0.2.2:8010';
+        return 'http://127.0.0.1:8020';
       }
-      return 'http://localhost:8010';
+      return 'http://localhost:8020';
     }
     throw StateError(
       'SAFAR_API_BASE_URL was not provided. Release builds must be compiled '

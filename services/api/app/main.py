@@ -32,6 +32,7 @@ from app.routers import (
     opportunity,
     places,
     pulse,
+    safety,
     trips,
     users,
     ws,
@@ -116,6 +117,8 @@ app.include_router(intelligence.router)
 app.include_router(admin.router)
 app.include_router(companion.router)
 app.include_router(companion.public_router)
+app.include_router(safety.router)
+app.include_router(safety.public_router)
 app.include_router(opportunity.router)
 app.include_router(ws.router)
 

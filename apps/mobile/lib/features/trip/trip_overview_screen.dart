@@ -105,6 +105,10 @@ class TripOverviewScreen extends ConsumerWidget {
                                     color: palette.ember,
                                   ),
                                 ),
+                                if (data.isSolo) ...[
+                                  const StatusChip('Solo', tone: ChipTone.neutral),
+                                  const SizedBox(width: 6),
+                                ],
                                 StatusChip(
                                   data.status,
                                   tone: data.status == 'confirmed'
@@ -120,7 +124,9 @@ class TripOverviewScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '${data.dateRangeLabel} · ${data.dayCount} days · ${data.memberCount} travellers',
+                              data.isSolo
+                                  ? '${data.dateRangeLabel} · ${data.dayCount} days · Solo Journey'
+                                  : '${data.dateRangeLabel} · ${data.dayCount} days · ${data.memberCount} travellers',
                               style: context.texts.bodySmall,
                             ),
                             if (data.description != null &&
@@ -199,6 +205,43 @@ class TripOverviewScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
+                      if (data.isSolo) ...[
+                        const SizedBox(height: 14),
+                        SafarCard(
+                          onTap: () => context.push('/trips/$tripId/safety'),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: palette.emberSoft,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.shield_outlined,
+                                  size: 20,
+                                  color: palette.ember,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Solo Safety Centre', style: context.texts.titleSmall),
+                                    Text(
+                                      'Check-ins, emergency contacts & offline dialers',
+                                      style: context.texts.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.chevron_right, size: 18, color: palette.faint),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (next != null) ...[
                         const SizedBox(height: 16),
                         SafarCard(
@@ -504,6 +547,11 @@ class TripOverviewScreen extends ConsumerWidget {
                             label: 'Assistant',
                             onTap: () =>
                                 context.push('/trips/$tripId/assistant'),
+                          ),
+                          _Tool(
+                            icon: Icons.shield_outlined,
+                            label: 'Safety',
+                            onTap: () => context.push('/trips/$tripId/safety'),
                           ),
                         ],
                       ),

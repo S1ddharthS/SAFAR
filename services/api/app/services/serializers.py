@@ -177,6 +177,7 @@ def trip_out(db: Session, trip: Trip, member: TripMember | None = None) -> dict:
         "base_lon": trip.base_lon,
         "status": trip.status,
         "privacy": trip.privacy,
+        "trip_type": getattr(trip, "trip_type", "group") or "group",
         "created_by": trip.created_by,
         "member_count": member_count,
         "my_role": member.role if member else None,

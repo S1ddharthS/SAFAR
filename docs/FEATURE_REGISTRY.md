@@ -447,3 +447,42 @@ Comprehensive observability and operational telemetry foundation across backend 
   - Web: 12 vitest tests passing, 0 TypeScript errors.
   - Mobile: 61 unit/widget tests passing (including 4 observability tests), 0 `flutter analyze` issues, 12 live API integration tests passing against staging port 8020.
   - Staging RLS & Isolation: 100% verified against Supabase PostgreSQL 17 (`safar_app` role).
+
+---
+
+## Group-First Architecture with Integrated Solo Travel & Safety Centre (2026-11-22)
+
+SAFAR preserves its identity as primarily a **Group Travel platform** (Priority 1: Group Travel default & prominent; Priority 2: Solo Travel integrated secondary capability).
+
+* **Product Hierarchy & Philosophy**:
+  - Group Travel remains the primary, default experience (creation defaults to group mode, collaborative voting, expense settlement, Journey DNA matching, group missions).
+  - Solo Travel is an integrated secondary option accessible via the trip creation travel mode selector and dashboard indicators.
+  - Solo journeys belong to individual travellers and do not enforce invitations, voting stalls, or required splits.
+
+* **Backend Models & Migration (`f1a2b3c4d5e6_solo_travel_and_safety.py`)**:
+  - `Trip.trip_type` (`group` or `solo`, server default `"group"`).
+  - `EmergencyContact` (`trip_id`, `user_id`, `name`, `relationship`, `phone`, `email`, `notes`, `is_primary`).
+  - `TripCheckIn` (`trip_id`, `user_id`, `status` [safe/delayed/needs_assistance/completed], `location_name`, `lat`, `lon`, `message`).
+  - `SoloSafetySettings` (`trip_id`, `check_in_frequency_hours` [default 24], `last_check_in_at`, `next_check_in_due`, `location_sharing_enabled`, `share_token`).
+
+* **API Endpoints (`routers/safety.py`)**:
+  - `GET /api/trips/{trip_id}/safety` — Authenticated status check returning active check-in state, overdue hours, contacts, settings, and country-aware emergency dialer numbers.
+  - `POST /api/trips/{trip_id}/safety/contacts` — Add primary or secondary emergency contact.
+  - `DELETE /api/trips/{trip_id}/safety/contacts/{contact_id}` — Remove contact.
+  - `POST /api/trips/{trip_id}/safety/check-in` — Submit live check-in; advances `last_check_in_at` and `next_check_in_due`.
+  - `PATCH /api/trips/{trip_id}/safety/settings` — Update check-in interval (6h, 12h, 24h, 48h) or toggle public beacon.
+  - `GET /api/safety/beacon/{token}` — Public unauthenticated read-only endpoint for family/friends to view traveler status and last check-in without an account.
+
+* **Mobile Architecture (`apps/mobile`)**:
+  - `TripCreateScreen` — Segmented Travel Mode selector (Group Journey [default/primary] vs Solo Journey [secondary]); dynamic personal budget and personal notes labels; single-traveller mode.
+  - `DashboardScreen` — Group trips prominent; subtle `Solo` chip on individual journeys.
+  - `TripOverviewScreen` — Dedicated Solo Safety Centre card for solo trips; `Safety` tool in Workspace grid.
+  - `SoloSafetyScreen` (`/trips/:tripId/safety`) — Live status banner with overdue warnings; "Check In Now" modal; country-aware emergency dialers (Japan 110/119, UK 999, US/Canada 911, Europe/India 112, Australia 000) using `url_launcher`; offline SharedPreferences caching; Trusted Contact Beacon share button (`SharePlus`); emergency contact manager.
+  - Clear non-emergency disclaimer: informational tool, not guaranteed dispatch or continuous GPS surveillance.
+
+* **Verification**:
+  - Backend: `services/api/tests/test_solo_travel.py` (4 tests passing: solo trip creation, contact management, check-in, beacon access & 404 security).
+  - Mobile: `apps/mobile/test/solo_travel_test.dart` (6 tests passing: model deserialization, emergency dialers, mode selector).
+  - Mobile full suite: 85 passed, 0 failed.
+  - Flutter analyze: clean (0 errors, 0 warnings).
+

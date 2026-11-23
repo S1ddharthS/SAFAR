@@ -14,6 +14,7 @@ import 'models/itinerary.dart';
 import 'models/memories.dart';
 import 'models/monitoring.dart';
 import 'models/planning.dart';
+import 'models/safety.dart';
 import 'models/social.dart';
 import 'models/trip.dart';
 import 'native/file_exporter.dart';
@@ -31,6 +32,7 @@ import 'repositories/expense_repository.dart';
 import 'repositories/inspiration_repository.dart';
 import 'repositories/itinerary_repository.dart';
 import 'repositories/memory_repository.dart';
+import 'repositories/safety_repository.dart';
 import 'repositories/social_repository.dart';
 import 'repositories/trip_repository.dart';
 import 'repositories/user_repository.dart';
@@ -97,6 +99,9 @@ final socialRepositoryProvider = Provider<SocialRepository>(
 );
 final companionRepositoryProvider = Provider<CompanionRepository>(
   (ref) => CompanionRepository(ref.watch(apiClientProvider)),
+);
+final safetyRepositoryProvider = Provider<SafetyRepository>(
+  (ref) => SafetyRepository(ref.watch(apiClientProvider)),
 );
 
 final fileExporterProvider = Provider<FileExporter>(
@@ -433,6 +438,10 @@ final proposalDetailProvider = FutureProvider.family<Proposal, ProposalRecord>(
       .getProposal(key.tripId, key.proposalId),
 );
 
+final soloSafetyProvider = FutureProvider.family<SoloSafetyStatus, String>(
+  (ref, tripId) => ref.watch(safetyRepositoryProvider).getSafetyStatus(tripId),
+);
+
 /// Data scoped to the signed-in account. `AuthController` invalidates all of
 /// these when a session starts so one person's cached trips, members or
 /// invites can never surface in another account's session (and an error that
@@ -480,4 +489,5 @@ final sessionDataProviders = <ProviderOrFamily>[
   threadProvider,
   nearbyProvider,
   proposalDetailProvider,
+  soloSafetyProvider,
 ];

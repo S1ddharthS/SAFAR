@@ -268,6 +268,7 @@ class Trip(Base, TimestampMixin):
     base_lon: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(20), default="planning")
     privacy: Mapped[str] = mapped_column(String(20), default="private")
+    trip_type: Mapped[str] = mapped_column(String(20), default="group", server_default="group")
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -1057,3 +1058,54 @@ class UserMission(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(20), default="joined")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class EmergencyContact(Base):
+    __tablename__ = "emergency_contacts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trip_id: Mapped[str] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    relationship: Mapped[str] = mapped_column(String(60), default="Contact")
+    phone: Mapped[str] = mapped_column(String(40))
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TripCheckIn(Base):
+    __tablename__ = "trip_check_ins"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trip_id: Mapped[str] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(30), default="safe")
+    location_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SoloSafetySettings(Base):
+    __tablename__ = "solo_safety_settings"
+
+    trip_id: Mapped[str] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), primary_key=True
+    )
+    check_in_frequency_hours: Mapped[int] = mapped_column(Integer, default=24)
+    last_check_in_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_check_in_due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    location_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

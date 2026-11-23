@@ -88,9 +88,10 @@ class TripCreate(BaseModel):
     destination_name: str | None = None
     start_date: date
     end_date: date
-    group_size: int = Field(default=4, ge=2, le=12)
+    group_size: int = Field(default=4, ge=1, le=12)
     budget_total: float | None = Field(default=None, ge=0)
     currency: str = "EUR"
+    trip_type: Literal["group", "solo"] = "group"
 
 
 class TripUpdate(BaseModel):
@@ -98,9 +99,10 @@ class TripUpdate(BaseModel):
     description: str | None = None
     start_date: date | None = None
     end_date: date | None = None
-    group_size: int | None = Field(default=None, ge=2, le=12)
+    group_size: int | None = Field(default=None, ge=1, le=12)
     budget_total: float | None = Field(default=None, ge=0)
     status: Literal["planning", "active", "completed", "archived"] | None = None
+    trip_type: Literal["group", "solo"] | None = None
 
 
 class InviteCreate(BaseModel):
@@ -440,3 +442,95 @@ class OfflineSyncItem(BaseModel):
     client_id: str = Field(min_length=6, max_length=80)
     operation: Literal["memory_create"]
     payload: dict
+
+
+class EmergencyContactCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    relationship: str = Field(default="Contact", max_length=60)
+    phone: str = Field(min_length=3, max_length=40)
+    email: EmailStr | None = None
+    notes: str | None = Field(default=None, max_length=500)
+    is_primary: bool = False
+
+
+class EmergencyContactOut(BaseModel):
+    id: str
+    trip_id: str
+    user_id: str
+    name: str
+    relationship: str
+    phone: str
+    email: str | None = None
+    notes: str | None = None
+    is_primary: bool
+    created_at: datetime
+
+
+class TripCheckInCreate(BaseModel):
+    status: Literal["safe", "delayed", "needs_assistance", "completed"] = "safe"
+    location_name: str | None = Field(default=None, max_length=160)
+    lat: float | None = None
+    lon: float | None = None
+    message: str | None = Field(default=None, max_length=500)
+
+
+class TripCheckInOut(BaseModel):
+    id: str
+    trip_id: str
+    user_id: str
+    status: str
+    location_name: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    message: str | None = None
+    created_at: datetime
+
+
+class SoloSafetySettingsUpdate(BaseModel):
+    check_in_frequency_hours: int | None = Field(default=None, ge=1, le=168)
+    location_sharing_enabled: bool | None = None
+
+
+class SoloSafetySettingsOut(BaseModel):
+    trip_id: str
+    check_in_frequency_hours: int
+    last_check_in_at: datetime | None = None
+    next_check_in_due: datetime | None = None
+    location_sharing_enabled: bool
+    share_token: str | None = None
+    updated_at: datetime
+
+
+class LocalEmergencyNumbers(BaseModel):
+    country_code: str
+    country_name: str
+    police: str
+    ambulance: str
+    fire: str
+    general: str | None = None
+
+
+class SoloSafetyStatusOut(BaseModel):
+    trip_id: str
+    trip_name: str
+    is_solo: bool
+    settings: SoloSafetySettingsOut
+    contacts: list[EmergencyContactOut]
+    recent_check_ins: list[TripCheckInOut]
+    last_check_in: TripCheckInOut | None = None
+    is_overdue: bool
+    hours_overdue: float
+    local_emergency_numbers: LocalEmergencyNumbers
+
+
+class SafetyBeaconOut(BaseModel):
+    traveler_name: str
+    trip_name: str
+    destination_name: str
+    status: str
+    last_check_in_at: datetime | None = None
+    last_location_name: str | None = None
+    last_message: str | None = None
+    next_check_in_due: datetime | None = None
+    is_overdue: bool
+

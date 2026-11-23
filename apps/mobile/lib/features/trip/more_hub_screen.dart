@@ -171,6 +171,12 @@ class MoreHubScreen extends ConsumerWidget {
             caption: 'Carry the confirmed plan when the network is not there.',
             tiles: [
               _HubTile(
+                icon: Icons.shield_outlined,
+                title: 'Solo Safety Centre',
+                caption: 'Check-ins, emergency contacts and local offline emergency dialers.',
+                onTap: () => context.push('/trips/$tripId/safety'),
+              ),
+              _HubTile(
                 icon: Icons.cloud_off_outlined,
                 title: 'Offline snapshot',
                 caption: 'Confirmed plan, members and pact — read-only.',

@@ -79,6 +79,17 @@ flowchart TD
    - Update `docs/FEATURE_REGISTRY.md` to reflect verified statuses.
    - Update `SAFAR_MASTER_SPECIFICATION.md` if any schemas were enhanced.
 
+### Batch 5: Group-First Platform with Integrated Solo Travel & Safety Centre — ✅ COMPLETE (2026-11-22)
+**Objective:** Expand SAFAR with integrated solo travel capabilities while keeping Group Travel the primary, default experience.
+**Status:** **100% COMPLETE & VERIFIED** (All tests in `test/solo_travel_test.dart`, `test_solo_travel.py`, and full 85-test mobile suite pass).
+
+| Capability | Implementation Delivered | Verification & Tests | Status |
+|---|---|---|---|
+| **Product Hierarchy & Travel Mode Selector** | 1. Integrated segmented mode selector in `TripCreateScreen` (Group Journey [default/primary] vs Solo Journey [secondary]).<br/>2. Solo journeys belong to individual travellers without requiring invitations or group voting.<br/>3. Contextual labels: Personal budget, Personal trip notes.<br/>4. Group travel remains prominent on dashboard; subtle `Solo` chip on individual journeys. | `apps/mobile/test/solo_travel_test.dart`<br/>- Travel mode selector switches UI properly.<br/>- Single-traveller mode validated. | ✅ COMPLETE |
+| **Solo Safety Centre & Emergency Dialers** | 1. Built `SoloSafetyScreen` (`/trips/:tripId/safety`) with live status, overdue check-in alert, and "Check In Now" modal.<br/>2. Country-aware emergency numbers (Japan 110/119, UK 999, US/Canada 911, Europe/India 112, Australia 000) with one-tap device dialers via `url_launcher`.<br/>3. Emergency contact manager (add, delete, primary badge, direct phone calling).<br/>4. Offline reliability: cached locally via `SharedPreferences`.<br/>5. Prominent non-emergency disclaimer banner. | `test/solo_travel_test.dart`<br/>- Emergency dialers render correct national numbers.<br/>- Check-in submission and primary contacts verified. | ✅ COMPLETE |
+| **Trusted Contact Beacon** | 1. Unauthenticated read-only endpoint `GET /api/safety/beacon/{token}`.<br/>2. Allows trusted family and friends to view the traveler's safety status and last check-in without needing a SAFAR account.<br/>3. In-app toggle to enable/disable sharing and generate secure token.<br/>4. Native Android share sheet integration via `SharePlus`. | `services/api/tests/test_solo_travel.py`<br/>- Unauthenticated beacon retrieval verified.<br/>- Invalid token returns 404.<br/>- Check-in timestamp and location returned. | ✅ COMPLETE |
+| **Database & API Architecture** | 1. Added `trip_type` to `Trip` model and updated Alembic migration `f1a2b3c4d5e6_solo_travel_and_safety.py`.<br/>2. Added `EmergencyContact`, `TripCheckIn`, and `SoloSafetySettings` models.<br/>3. New `routers/safety.py` with 5 authenticated endpoints and 1 public beacon endpoint.<br/>4. Preserved existing group travel database integrity, demo accounts, and RLS policies. | `services/api/tests/test_solo_travel.py`<br/>- 4 pytest tests passing.<br/>- Direct itinerary addition on solo trip verified.<br/>- Group defaults preserved for group trips. | ✅ COMPLETE |
+
 ---
 
 ## 3. Decisions & Approvals Required

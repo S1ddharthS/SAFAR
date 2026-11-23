@@ -31,8 +31,11 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
   );
   int _groupSize = 4;
   String _currency = 'EUR';
+  String _tripType = 'group';
   bool _busy = false;
   String? _error;
+
+  bool get _isSolo => _tripType == 'solo';
 
   String get _dateLabel =>
       '${formatDate(isoDate(_range.start))} → ${formatDate(isoDate(_range.end))}';
@@ -89,9 +92,10 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
             destinationName:
                 _custom ? _customDestination.text.trim() : null,
             description: _description.text.trim(),
-            groupSize: _groupSize,
+            groupSize: _isSolo ? 1 : _groupSize,
             budgetTotal: budget != null && budget > 0 ? budget : null,
             currency: _currency,
+            tripType: _tripType,
           );
       ref.invalidate(tripsProvider);
       if (!mounted) return;
@@ -134,7 +138,88 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                 'Only the essentials. The group adds constraints later, privately.',
                 style: context.texts.bodySmall,
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: palette.line),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setState(() {
+                          _tripType = 'group';
+                          if (_groupSize == 1) _groupSize = 4;
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: !_isSolo ? palette.emberSoft : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.groups_outlined,
+                                size: 18,
+                                color: !_isSolo ? palette.ember : palette.faint,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Group Journey',
+                                style: TextStyle(
+                                  fontWeight: !_isSolo ? FontWeight.w600 : FontWeight.normal,
+                                  color: !_isSolo ? palette.ember : palette.faint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setState(() {
+                          _tripType = 'solo';
+                          _groupSize = 1;
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _isSolo ? palette.emberSoft : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.person_outline,
+                                size: 18,
+                                color: _isSolo ? palette.ember : palette.faint,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Solo Journey',
+                                style: TextStyle(
+                                  fontWeight: _isSolo ? FontWeight.w600 : FontWeight.normal,
+                                  color: _isSolo ? palette.ember : palette.faint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               if (_error != null) ...[
                 InfoBanner(
                   text: _error!,
@@ -235,45 +320,73 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Travellers', style: context.texts.labelMedium),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Approximate group size',
-                          style: context.texts.labelSmall,
+              if (_isSolo)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: palette.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: palette.line),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline, size: 20, color: palette.ember),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Solo Traveller (1 person)', style: context.texts.titleSmall),
+                            Text(
+                              'No invitations needed. Solo Safety Centre will be enabled.',
+                              style: context.texts.bodySmall,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Travellers', style: context.texts.labelMedium),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Approximate group size',
+                            style: context.texts.labelSmall,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: _groupSize > 1
-                        ? () => setState(() => _groupSize -= 1)
-                        : null,
-                    icon: const Icon(Icons.remove, size: 18),
-                    tooltip: 'Fewer travellers',
-                  ),
-                  SizedBox(
-                    width: 44,
-                    child: Text(
-                      '$_groupSize',
-                      textAlign: TextAlign.center,
-                      style: context.texts.titleLarge,
+                    IconButton.filledTonal(
+                      onPressed: _groupSize > 2
+                          ? () => setState(() => _groupSize -= 1)
+                          : null,
+                      icon: const Icon(Icons.remove, size: 18),
+                      tooltip: 'Fewer travellers',
                     ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: _groupSize < 30
-                        ? () => setState(() => _groupSize += 1)
-                        : null,
-                    icon: const Icon(Icons.add, size: 18),
-                    tooltip: 'More travellers',
-                  ),
-                ],
-              ),
+                    SizedBox(
+                      width: 44,
+                      child: Text(
+                        '$_groupSize',
+                        textAlign: TextAlign.center,
+                        style: context.texts.titleLarge,
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      onPressed: _groupSize < 30
+                          ? () => setState(() => _groupSize += 1)
+                          : null,
+                      icon: const Icon(Icons.add, size: 18),
+                      tooltip: 'More travellers',
+                    ),
+                  ],
+                ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -283,9 +396,13 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Group budget (optional)',
-                        hintText: 'Total, not per person',
+                      decoration: InputDecoration(
+                        labelText: _isSolo
+                            ? 'Personal budget (optional)'
+                            : 'Group budget (optional)',
+                        hintText: _isSolo
+                            ? 'Estimated personal spend'
+                            : 'Total, not per person',
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) return null;
@@ -301,9 +418,10 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                   ),
                   const SizedBox(width: 10),
                   SizedBox(
-                    width: 104,
+                    width: 114,
                     child: DropdownButtonFormField<String>(
                       initialValue: _currency,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Currency'),
                       items: const [
                         DropdownMenuItem(value: 'EUR', child: Text('EUR')),
@@ -324,9 +442,13 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                 maxLines: 3,
                 maxLength: 400,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'A note for the group (optional)',
-                  hintText: 'What kind of journey is this?',
+                decoration: InputDecoration(
+                  labelText: _isSolo
+                      ? 'Personal notes (optional)'
+                      : 'A note for the group (optional)',
+                  hintText: _isSolo
+                      ? 'What are you aiming to experience?'
+                      : 'What kind of journey is this?',
                 ),
               ),
               const SizedBox(height: 8),
@@ -338,7 +460,7 @@ class _TripCreateScreenState extends ConsumerState<TripCreateScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Create trip'),
+                    : Text(_isSolo ? 'Create solo trip' : 'Create trip'),
               ),
               const SizedBox(height: 10),
               Text(

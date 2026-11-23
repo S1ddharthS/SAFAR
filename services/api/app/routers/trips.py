@@ -25,6 +25,7 @@ from app.models import (
     Notification,
     PlannerTask,
     RecommendationBatch,
+    SoloSafetySettings,
     Trip,
     TripBranch,
     TripInvitation,
@@ -135,6 +136,7 @@ async def create_trip(
         group_size=payload.group_size,
         budget_total=payload.budget_total,
         currency=payload.currency.upper()[:8],
+        trip_type=payload.trip_type or ("solo" if payload.group_size == 1 else "group"),
         base_lat=destination.lat if destination else 0.0,
         base_lon=destination.lon if destination else 0.0,
         created_by=user.id,
@@ -142,6 +144,13 @@ async def create_trip(
     )
     db.add(trip)
     db.flush()
+    if trip.trip_type == "solo":
+        safety_settings = SoloSafetySettings(
+            trip_id=trip.id,
+            check_in_frequency_hours=24,
+            location_sharing_enabled=False,
+        )
+        db.add(safety_settings)
     membership = TripMember(
         trip_id=trip.id,
         user_id=user.id,

@@ -44,6 +44,7 @@ import '../features/trip/proposals_screen.dart';
 import '../features/trip/pulse_screen.dart';
 import '../features/trip/replay_screen.dart';
 import '../features/trip/rescue_screen.dart';
+import '../features/trip/solo_safety_screen.dart';
 import '../features/trip/studio_screen.dart';
 import '../features/trip/tasks_screen.dart';
 import '../features/trip/thread_screen.dart';
@@ -189,6 +190,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             parentNavigatorKey: _rootNavigator,
             builder: (context, state) =>
                 RescueScreen(tripId: state.pathParameters['tripId']!),
+          ),
+          GoRoute(
+            path: 'safety',
+            parentNavigatorKey: _rootNavigator,
+            builder: (context, state) =>
+                SoloSafetyScreen(tripId: state.pathParameters['tripId']!),
           ),
           GoRoute(
             path: 'memories',

@@ -255,6 +255,10 @@ class _TripHero extends StatelessWidget {
                     color: palette.ember,
                   ),
                 ),
+                if (trip.isSolo) ...[
+                  const StatusChip('Solo', tone: ChipTone.neutral),
+                  const SizedBox(width: 6),
+                ],
                 StatusChip(
                   trip.status,
                   tone: trip.status == 'confirmed' ? ChipTone.jade : ChipTone.ember,
@@ -265,7 +269,9 @@ class _TripHero extends StatelessWidget {
             Text(trip.name, style: context.texts.headlineLarge),
             const SizedBox(height: 8),
             Text(
-              '${trip.dateRangeLabel} · ${trip.dayCount} days · ${trip.memberCount} ${trip.memberCount == 1 ? 'traveller' : 'travellers'}',
+              trip.isSolo
+                  ? '${trip.dateRangeLabel} · ${trip.dayCount} days · Solo journey'
+                  : '${trip.dateRangeLabel} · ${trip.dayCount} days · ${trip.memberCount} travellers',
               style: context.texts.bodySmall,
             ),
             if (next != null) ...[
@@ -377,6 +383,10 @@ class _TripRow extends StatelessWidget {
               ],
             ),
           ),
+          if (trip.isSolo) ...[
+            const StatusChip('Solo', tone: ChipTone.neutral),
+            const SizedBox(width: 6),
+          ],
           StatusChip(trip.myRole, tone: trip.isOwner ? ChipTone.ember : ChipTone.neutral),
         ],
       ),
